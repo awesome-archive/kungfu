@@ -40,6 +40,16 @@ class PyLocator : public data::locator
 {
     using data::locator::locator;
 
+    bool has_env(const std::string &name) const override
+    {
+        PYBIND11_OVERLOAD_PURE(bool, data::locator, has_env, name)
+    }
+
+    const std::string get_env(const std::string &name) const override
+    {
+        PYBIND11_OVERLOAD_PURE(const std::string, data::locator, get_env, name)
+    }
+
     const std::string layout_dir(data::location_ptr location, data::layout l) const override
     {
         PYBIND11_OVERLOAD_PURE(const std::string, data::locator, layout_dir, location, l)
@@ -123,14 +133,9 @@ class PyMaster : public master
 public:
     using master::master;
 
-    void on_register(const kungfu::yijinjing::event_ptr &event) override
+    void on_register(const event_ptr &event, data::location_ptr app_location) override
     {
-        PYBIND11_OVERLOAD(void, master, on_register, event);
-    }
-
-    void on_json(const kungfu::yijinjing::event_ptr &event) override
-    {
-        PYBIND11_OVERLOAD(void, master, on_json, event);
+        PYBIND11_OVERLOAD(void, master, on_register, event, app_location);
     }
 
     void on_interval_check(int64_t nanotime) override
@@ -185,6 +190,7 @@ PYBIND11_MODULE(pyyjj, m)
             .value("BACKTEST", data::mode::BACKTEST)
             .export_values();
     m.def("get_mode_name", &data::get_mode_name);
+    m.def("get_mode_by_name", &data::get_mode_by_name);
 
     py::enum_<data::category>(m, "category", py::arithmetic(), "Kungfu Data Category")
             .value("MD", data::category::MD)
@@ -214,7 +220,7 @@ PYBIND11_MODULE(pyyjj, m)
             .def("to_string", &event::to_string)
             ;
 
-    py::class_<frame, frame_ptr>(m, "frame")
+    py::class_<frame, event, frame_ptr>(m, "frame")
             .def_property_readonly("gen_time", &frame::gen_time)
             .def_property_readonly("trigger_time", &frame::trigger_time)
             .def_property_readonly("source", &frame::source)
@@ -224,9 +230,11 @@ PYBIND11_MODULE(pyyjj, m)
             .def_property_readonly("header_length", &frame::header_length)
             .def_property_readonly("data_length", &frame::data_length)
             .def_property_readonly("address", &frame::address)
-            .def("data_as_bytes", &frame::data_as_bytes)
-            .def("data_as_string", &frame::data_as_string)
-            .def("has_data", &frame::has_data);
+            .def_property_readonly("data_as_bytes", &frame::data_as_bytes)
+            .def_property_readonly("data_as_string", &frame::data_as_string)
+            .def("has_data", &frame::has_data)
+            .def_property_readonly("data_address", [](const frame &f) {return f.address() + f.header_length();})
+            ;
 
     py::class_<data::location, std::shared_ptr<data::location>>(m, "location")
             .def(py::init<data::mode, data::category, const std::string &, const std::string &, data::locator_ptr>())
@@ -240,6 +248,8 @@ PYBIND11_MODULE(pyyjj, m)
 
     py::class_<data::locator, PyLocator, std::shared_ptr<data::locator>>(m, "locator")
             .def(py::init())
+            .def("has_env", &data::locator::has_env)
+            .def("get_env", &data::locator::get_env)
             .def("layout_dir", &data::locator::layout_dir)
             .def("layout_file", &data::locator::layout_file)
             .def("list_page_id", &data::locator::list_page_id);
@@ -285,6 +295,13 @@ PYBIND11_MODULE(pyyjj, m)
 
     py::class_<writer, writer_ptr>(m, "writer")
             .def("write_raw", &writer::write_raw)
+            .def("write_str",
+                    [](const writer_ptr& w, int64_t trigger_time, int32_t msg_type, const std::string &data)
+                    {
+                        w->write_raw(trigger_time, msg_type, reinterpret_cast<uintptr_t>(data.c_str()), data.length());
+                    })
+            .def("current_frame_uid", &writer::current_frame_uid)
+            .def("mark", &writer::mark)
             .def("mark_with_time", &writer::mark_with_time);
 
     py::class_<io_device, io_device_ptr> io_device(m, "io_device");
@@ -314,7 +331,6 @@ PYBIND11_MODULE(pyyjj, m)
             .def("publish_time", &master::publish_time)
             .def("send_time", &master::send_time)
             .def("on_register", &master::on_register)
-            .def("on_json", &master::on_json)
             .def("on_interval_check", &master::on_interval_check)
             .def("on_exit", &master::on_exit)
             .def("deregister_app", &master::deregister_app)

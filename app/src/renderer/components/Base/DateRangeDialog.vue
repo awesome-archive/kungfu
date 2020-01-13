@@ -5,7 +5,9 @@
     v-if="visible"
     :visible="visible" 
     :close-on-click-modal="false"
+    :close-on-press-escape="true"
     @close="handleClose"
+    @keyup.enter.native="handleSubmitSetting"
     >
         <el-form ref="date-range-form" label-width="90px" :model="form">
             <el-form-item

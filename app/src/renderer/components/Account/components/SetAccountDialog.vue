@@ -5,31 +5,36 @@
     v-if="visible"
     :visible="visible" 
     :close-on-click-modal="false"
+    :close-on-press-escape="true"
     @close="handleCancel"
+    @keyup.enter.native="handleSubmitSetting"
     id="confirm-set-account-dialog"
     
     >
         <el-form 
-        v-if="!!config[source] && config[source].config"        
-        ref="accountForm" label-width="140px" :model="value">
+        v-if="!!accountSource[source] && accountSource[source].config"        
+        ref="accountForm" label-width="140px" :model="postForm">
             <!-- 自定义部分 -->
             <el-form-item 
-            v-for="item of config[source].config" :key="item.key"
+            v-for="item of accountSource[source].config" :key="item.key"
             :label="item.name"
             :prop="item.key"
             :rules="buildValidators(item)"
             >
                 <el-col :span="19">
-                    <el-input :class="item.key" v-if="item.type === 'str'" :type="item.key" v-model.trim="value[item.key]" :disabled="method == 'update' && config[source].key == item.key"></el-input>
-                    <el-input :class="item.key" v-if="item.type === 'password'" :type="item.key" v-model.trim="value[item.key]" :disabled="method == 'update' && config[source].key == item.key" show-password></el-input>
-                    <el-switch :class="item.key" v-if="item.type === 'bool'" v-model.trim="value[item.key]"></el-switch>
-                    <el-input-number :class="item.key" v-if="item.type === 'int'"  :controls="false" v-model.trim="value[item.key]"></el-input-number>
-                    <el-select :class="item.key" size="small" v-if="item.type === 'select'" :multiple="item.multiple" collapse-tags  v-model.trim="value[item.key]" placeholder="请选择">
+                    <el-input :class="item.key" v-if="item.type === 'str'" :type="item.key" v-model.trim="postForm[item.key]" :disabled="method == 'update' && accountSource[source].key == item.key"></el-input>
+                    <el-input :class="item.key" v-if="item.type === 'password'" :type="item.key" v-model.trim="postForm[item.key]" :disabled="method == 'update' && accountSource[source].key == item.key" show-password></el-input>
+                    <el-switch :class="item.key" v-if="item.type === 'bool'" v-model.trim="postForm[item.key]"></el-switch>
+                    <el-input-number :class="item.key" v-if="item.type === 'int'" :controls="false" v-model.trim="postForm[item.key]"></el-input-number>
+                    <el-input-number :class="item.key" v-if="item.type === 'float'" :controls="false" v-model.trim="postForm[item.key]"></el-input-number>
+                    <span class="account-setting-path path-selection-in-dialog text-overflow" v-if="item.type === 'file'" :title="postForm[item.key]">{{postForm[item.key]}}</span>                    
+                    <el-button size="mini" icon="el-icon-more" v-if="item.type === 'file'" @click="handleSelectFile(item.key)"></el-button>
+                    <el-select :class="item.key" size="small" v-if="item.type === 'select'" :multiple="item.multiple" collapse-tags  v-model.trim="postForm[item.key]" placeholder="请选择">
                         <el-option
-                            v-for="item in item.data"
-                            :key="item.value"
-                            :label="item.name"
-                            :value="item.value">
+                            v-for="option in item.data"
+                            :key="option.value"
+                            :label="option.name"
+                            :value="option.value">
                         </el-option>
                     </el-select>
                 </el-col>
@@ -49,9 +54,11 @@
 </template>
 
 <script>
-import { accountSource } from '__gConfig/accountConfig';
 import { mapState } from 'vuex';
 import * as ACCOUNT_API from '__io/db/account';
+import { deepClone } from '__gUtils/busiUtils';
+import { remote } from 'electron';
+
 export default {
     name: 'set-account-dialog',
     props: {
@@ -83,7 +90,6 @@ export default {
         }
     },
     data() {
-        this.config = accountSource;
         //存放初始数据格式
         this.initData = {
             resolve_mode: 'auto',
@@ -91,7 +97,26 @@ export default {
             need_auth: false,
             need_settlement_confirm: false,
         }
-        return {}
+
+        return {
+            postForm: deepClone(this.value)
+        }
+    },
+
+    mounted(){
+       this.initPostForm();
+    },
+
+    watch: {
+        postForm(){
+            this.initPostForm();
+        }
+    },
+
+    computed: {
+        ...mapState({
+            accountSource: state => state.BASE.accountSource
+        })
     },
 
     methods:{
@@ -99,13 +124,26 @@ export default {
             this.close()
         },
 
+        //添加文件
+        handleSelectFile(targetKey) {
+            const t = this;
+            const dialog = remote.dialog;
+            dialog.showOpenDialog({
+                properties: ['openFile']
+            }, (filePath) => {
+                if(!filePath || !filePath[0]) return;
+                t.$set(t.postForm, targetKey, filePath[0]);
+                t.$refs.accountForm.validate() //手动进行再次验证，因数据放在span中，改变数据后无法触发验证
+            })
+        },
+
         //提交，同时更新accounts
         handleSubmitSetting() {
             const t = this
             t.$refs.accountForm.validate(valid => {
                 if(valid) {
-                    let account_id = `${t.source}_${t.value[t.config[t.source].key]}`
-                    const formValue = t.value
+                    let account_id = `${t.source}_${t.postForm[t.accountSource[t.source].key]}`
+                    const formValue = t.postForm
                     let changeAccount 
                     if(t.method == 'add') { //添加账户
                         changeAccount = ACCOUNT_API.addAccount(account_id, t.source, t.firstAccount, JSON.stringify(formValue))
@@ -127,9 +165,21 @@ export default {
             })
         },
 
+        initPostForm() {
+             const t = this;
+            (t.accountSource[t.source].config || []).forEach(item => {
+                const key = item.key;
+                if((t.postForm[key] === undefined) || (t.postForm[key] === '')) {
+                    if(item.default) {
+                        t.postForm[key] = item.default
+                    }
+                }
+            })
+        },
+
         buildValidators(item) {
             const t = this;
-            if(t.method == 'add' && t.config[t.source].key == item.key){
+            if(t.method == 'add' && t.accountSource[t.source].key == item.key){
                 return [
                     {validator: t.validateAccountId, trigger: 'blur'},
                     {required: true, message: item.errMsg, trigger: 'blur'}
@@ -168,5 +218,9 @@ export default {
 
 <style lang="scss">
 @import '@/assets/scss/skin.scss';
+
+.path-selection-in-dialog.account-setting-path {
+    width: 240px;
+}
 
 </style>

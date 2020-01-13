@@ -46,16 +46,23 @@ namespace kungfu
             master_home_location_ = std::make_shared<location>(mode::LIVE, category::SYSTEM, "master", "master", locator);
             master_commands_location_ = std::make_shared<location>(mode::LIVE, category::SYSTEM, "master", uid_str, locator);
             config_location_ = std::make_shared<location>(mode::LIVE, category::SYSTEM, "etc", "kungfu", locator);
+            locations_[master_commands_location_->uid] = master_commands_location_;
         }
 
         void apprentice::request_write_to(int64_t trigger_time, uint32_t dest_id)
         {
-            require_write_to(master_commands_location_->uid, trigger_time, dest_id);
+            if (get_io_device()->get_home()->mode == mode::LIVE)
+            {
+                require_write_to(master_commands_location_->uid, trigger_time, dest_id);
+            }
         }
 
         void apprentice::request_read_from(int64_t trigger_time, uint32_t source_id, bool pub)
         {
-            require_read_from(master_commands_location_->uid, trigger_time, source_id, pub);
+            if (get_io_device()->get_home()->mode == mode::LIVE)
+            {
+                require_read_from(master_commands_location_->uid, trigger_time, source_id, pub);
+            }
         }
 
         void apprentice::add_timer(int64_t nanotime, const std::function<void(event_ptr)> &callback)
@@ -104,7 +111,7 @@ namespace kungfu
             if (get_io_device()->get_home()->mode == mode::LIVE)
             {
                 events_ | skip_until(events_ | is(msg::type::Register) | from(master_home_location_->uid)) | first() |
-                rx::timeout(seconds(1), observe_on_new_thread()) |
+                rx::timeout(seconds(10), observe_on_new_thread()) |
                 $([&](event_ptr e)
                   {
                       // timeout happens on new thread, can not subscribe journal reader here
@@ -154,6 +161,13 @@ namespace kungfu
             $([&](event_ptr e)
               {
                   register_location_from_event(e);
+              });
+
+            events_ | is(msg::type::Channel) |
+            $([&](event_ptr e)
+              {
+                    auto& channel = e->data<msg::data::Channel>();
+                    register_channel(e->gen_time(), channel);
               });
 
             events_ | is(msg::type::Register) |
@@ -228,15 +242,11 @@ namespace kungfu
             if (writers_.find(request.dest_id) == writers_.end())
             {
                 writers_[request.dest_id] = get_io_device()->open_writer(request.dest_id);
-                if (request.dest_id == 0)
-                {
-                    writers_[request.dest_id]->mark(event->trigger_time(), msg::type::SessionStart);
-                }
             } else
             {
-                SPDLOG_ERROR("{} [{:08x}] asks publish to {} [{:08x}] for more than once",
-                             get_location(event->source())->uname, event->source(),
-                             get_location(request.dest_id)->uname, request.dest_id);
+                SPDLOG_INFO("writer from {} [{:08x}] to {} [{:08x}] already existed",
+                        get_location(event->source())->uname, event->source(),
+                        get_location(request.dest_id)->uname, request.dest_id);
             }
         }
 
@@ -302,8 +312,9 @@ namespace kungfu
             nlohmann::json location_json = nlohmann::json::parse(json_str);
             uint32_t location_uid = location_json["uid"];
             reader_->disjoin(location_uid);
-            writers_.erase(location_uid);
+            deregister_channel_by_source(location_uid);
             deregister_location(event->trigger_time(), location_uid);
         }
+
     }
 }

@@ -17,7 +17,10 @@
 #define KUNGFU_YIJINJING_COMMON_H
 
 #include <utility>
+#include <typeinfo>
+#include <signal.h>
 #include <fmt/format.h>
+#include <spdlog/spdlog.h>
 #include <rxcpp/rx.hpp>
 
 #include <kungfu/common.h>
@@ -132,6 +135,20 @@ namespace kungfu
                 }
             }
 
+            inline mode get_mode_by_name(const std::string& name)
+            {
+                if(name == "live")
+                    return mode::LIVE;
+                else if(name == "data")
+                    return mode::DATA;
+                else if(name == "replay")
+                    return mode::REPLAY;
+                else if(name == "backtest")
+                    return mode::BACKTEST;
+                else
+                    return mode::LIVE;
+            }
+
             enum class category : int8_t
             {
                 MD,
@@ -193,6 +210,10 @@ namespace kungfu
 
                 virtual ~locator() = default;
 
+                virtual bool has_env(const std::string &name) const = 0;
+
+                virtual const std::string get_env(const std::string &name) const = 0;
+
                 virtual const std::string layout_dir(location_ptr location, layout l) const = 0;
 
                 virtual const std::string layout_file(location_ptr location, layout l, const std::string &name) const = 0;
@@ -251,6 +272,14 @@ namespace kungfu
                           });
         };
 
+        inline auto to = [](uint32_t dest)
+        {
+            return filter([=](yijinjing::event_ptr e)
+                          {
+                              return e->dest() == dest;
+                          });
+        };
+
         inline auto trace = []()
         {
             return map([=](yijinjing::event_ptr e)
@@ -259,6 +288,23 @@ namespace kungfu
                            return e;
                        });
         };
+
+        inline auto interrupt_on_error(std::exception_ptr e)
+        {
+            try
+            { std::rethrow_exception(e); }
+            catch (const std::exception &ex)
+            {
+                SPDLOG_ERROR("Unexpected exception {} by rx:subscriber {}", typeid(ex).name(), ex.what());
+            }
+            raise(SIGINT);
+        }
+
+        template<class Arg>
+        inline auto $(Arg an) -> decltype(subscribe<yijinjing::event_ptr>(std::forward<Arg>(an), interrupt_on_error))
+        {
+            return subscribe<yijinjing::event_ptr>(std::forward<Arg>(an), interrupt_on_error);
+        }
 
         template<class... ArgN>
         inline auto $(ArgN &&... an) -> decltype(subscribe<yijinjing::event_ptr>(std::forward<ArgN>(an)...))

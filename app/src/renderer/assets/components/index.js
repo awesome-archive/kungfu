@@ -12,10 +12,9 @@ import TrDashboard from './tr/TrDashboard.vue';
 import TrDashboardHeaderItem from './tr/TrDashboardHeaderItem.vue';
 import TrTable from './tr/TrTable.vue';
 import TrSearchInput from './tr/TrSearchInput.vue';
+import TrSettingDashboard from './tr/TrSettingDashboard.vue';
 
 import MainContent from '@/components/Layout/MainContent';
-import PopFrame from '@/components/Layout/PopFrame';
-
 import { buildTask } from '__gUtils/busiUtils';
 
 const components = [
@@ -23,7 +22,6 @@ const components = [
     TableHeader,
     TableHeaderItem,
     MainContent,
-    PopFrame,
     TrStatus,
     TrTabTop,
     TrTabTopItem,
@@ -35,6 +33,7 @@ const components = [
     TrPnl,
     TrTable,
     TrSearchInput,
+    TrSettingDashboard
 ]
 
 //导出

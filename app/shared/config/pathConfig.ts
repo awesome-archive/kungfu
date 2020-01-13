@@ -1,21 +1,21 @@
 import { addFile } from '__gUtils/fileUtils';
-import { platform } from './platformConfig';
+
 const path = require('path');
-const mainProcess = require('electron').app;
-const renderProcess = require('electron').remote;
 
-//ELEC_BASE
-var ELEC_BASE_DIR_RESOLVE;
-if (process.env.APP_TYPE === 'cli') ELEC_BASE_DIR_RESOLVE = process.env.APPDATA || (platform == 'darwin' ? path.join(process.env.HOME, 'Library', 'Application Support', 'kungfu') : path.join('var', 'local', 'kungfu'))
-else if (process.env.APP_TYPE === 'test') ELEC_BASE_DIR_RESOLVE = process.env.ELEC_BASE_DIR || ''; 
-else ELEC_BASE_DIR_RESOLVE = mainProcess ? mainProcess.getPath('userData') : renderProcess.app.getPath('userData')
 
-addFile('', ELEC_BASE_DIR_RESOLVE, 'folder')
+const KF_HOME_BASE_DIR_RESOLVE = (() => {
+    if ( process.env.APP_TYPE === 'cli' ) {
+        return require('__gConfig/cliKfHomePathConfig').KF_HOME_BASE_DIR_RESOLVE
+     } else {
+        return require('__gConfig/appKfHomePathConfig').KF_HOME_BASE_DIR_RESOLVE
+     }
+})()
 
-export const ELEC_BASE_DIR = ELEC_BASE_DIR_RESOLVE;
+addFile('', KF_HOME_BASE_DIR_RESOLVE, 'folder');
+export const KF_HOME_BASE_DIR = KF_HOME_BASE_DIR_RESOLVE;
 
 //BASE
-export const KF_HOME = path.join(ELEC_BASE_DIR, 'app')
+export const KF_HOME = path.join(KF_HOME_BASE_DIR, 'app')
 addFile('', KF_HOME, 'folder')
 
 //system
@@ -38,9 +38,9 @@ addFile('', TD_DIR, 'folder')
 export const MD_DIR = path.join(KF_HOME, 'md');
 addFile('', MD_DIR, 'folder')
 
-//watcher 
-export const WATCHER_DIR = path.join(SYSTEM_DIR, 'watcher', 'watcher')
-addFile('', WATCHER_DIR, 'folder')
+//ledger 
+export const LEDGER_DIR = path.join(SYSTEM_DIR, 'service', 'ledger')
+addFile('', LEDGER_DIR, 'folder')
 
 //log
 export const LOG_DIR = path.join(KF_HOME, 'log');
@@ -57,9 +57,6 @@ export const STRATEGYS_DB = path.join(BASE_DB_DIR, 'strategys.db')
 
 //accounts(td)
 export const ACCOUNTS_DB = path.join(BASE_DB_DIR, 'accounts.db')
-
-//tasks
-export const TASKS_DB = path.join(BASE_DB_DIR, 'task.db')
 
 //================= global db end =================================
 
@@ -79,9 +76,9 @@ export const buildAccountCommissionDBPath = (accountId: string) => path.join(bui
 //================= live trading start ===========================
 
 //trading data
-export const LIVE_TRADING_DB_DIR = path.join(WATCHER_DIR, 'db', 'live');
+export const LIVE_TRADING_DB_DIR = path.join(LEDGER_DIR, 'db', 'live');
 
-export const LIVE_TRADING_DATA_DB = path.join(LIVE_TRADING_DB_DIR, 'watcher.db')
+export const LIVE_TRADING_DATA_DB = path.join(LIVE_TRADING_DB_DIR, 'ledger.db')
 
 //================= live trading end =============================
 
@@ -93,24 +90,41 @@ export const GLOBAL_COMMISSION_DB = path.join(BASE_DB_DIR, 'commission.db');
 //获取进程日志地址
 export const buildProcessLogPath = (processId: string) => path.join(LOG_DIR, `${processId}.log`)
 
-//获取watcher nano pub 地址
-export const NMSG_PUB_FILE = path.join(SYSTEM_DIR, 'watcher', 'watcher', 'nn', 'live', 'pub.nn')
+//获取 ledger nano pub 地址
+export const NMSG_PUB_FILE = path.join(SYSTEM_DIR, 'service', 'ledger', 'nn', 'live', 'pub.nn')
 
-//获取watcher nano rep 地址
-export const NMSG_REP_FILE = path.join(SYSTEM_DIR, 'watcher', 'watcher', 'nn', 'live', 'rep.nn')
+//获取 ledger nano rep 地址
+export const NMSG_REP_FILE = path.join(SYSTEM_DIR, 'service', 'ledger', 'nn', 'live', 'rep.nn')
 
 //================== others end ===================================
 
-//kungfu-engine
-var KUNGFU_ENGINE_RESOLVE: string = process.env.NODE_ENV === 'production' 
-    ? process.env.APP_TYPE === 'cli' 
-        ? path.join('.') 
-        //@ts-ignore
-        : process.resourcesPath
-    : process.env.APP_TYPE === 'cli' 
-        ? path.join(__dirname, '..', '..', '..', '..', 'core', 'build')
-        : path.join(__dirname, '..', '..', '..', 'core', 'build')
 
-if(process.env.APP_TYPE === 'test') KUNGFU_ENGINE_RESOLVE = process.env.KUNGFU_ENGINE || ''
+export const getKfEnginePath = () => {
+    if(process.env.NODE_ENV === 'production') {
+        if(process.env.APP_TYPE === 'test'){
+            return process.env.KUNGFU_ENGINE_PATH || ''
+        }
+    }
+}
 
-export const KUNGFU_ENGINE = KUNGFU_ENGINE_RESOLVE;
+//@ts-ignore
+export const KUNGFU_ENGINE_PATH = process.env.NODE_ENV === 'production' 
+    ? process.resourcesPath
+    : path.join(__dirname, '..', '..', '..', 'core', 'build')
+
+const KUNGFU_RESOURCES_DIR = process.env.NODE_ENV === 'production'
+    ? path.join(process.resourcesPath, 'kungfu-resources')
+    : path.join(__resources)
+
+
+export const KF_CONFIG_DEFAULT_PATH = path.join(__resources, 'config', 'kfConfig.json')
+
+export const KF_TARADING_CONFIG_DEFAULT_PATH = path.join(__resources, 'config', 'kfTradingConfig.json')
+
+export const KF_CONFIG_PATH = path.join(KF_HOME, 'config', 'kfConfig.json')
+
+export const KF_TARADING_CONFIG_PATH = path.join(KF_HOME, 'config', 'kfTradingConfig.json')
+
+export const DEFUALT_DB_DIR = path.join(KUNGFU_RESOURCES_DIR, 'default')
+
+export const EXTENSION_DIR = path.join(KUNGFU_ENGINE_PATH, 'kfc', 'extensions');

@@ -28,7 +28,7 @@
     >
         <template v-slot:oper="{ oper }">
             <i 
-            v-if="[3,4,5,6].indexOf(+oper.status) === -1"
+            v-if="[0,3,4,5,6].indexOf(+oper.status) === -1"
             class="el-icon-close mouse-over" 
             title="撤单" 
             @click="handleCancelOrder(oper)"/>
@@ -94,7 +94,7 @@ export default {
     computed: {
         ...mapState({
             accountList: state => state.ACCOUNT.accountList,
-            calendar: state => state.BASE.calendar, //日期信息，包含交易日
+            tradingDay: state => state.BASE.tradingDay, //日期信息，包含交易日
             processStatus: state => state.BASE.processStatus
         }),
 
@@ -109,7 +109,7 @@ export default {
             {
                 type: "text",
                 label: "下单时间",
-                prop: "insertTime",
+                prop: "updateTime",
                 width: '160px'
             },{
                 type: "text",
@@ -160,19 +160,14 @@ export default {
             deep: true,
             handler(){
                 const t = this;
-                !!t.currentId && t.init()
+                if(t.currentId) t.init();
             }
         },
 
         currentId(val, oldVal) {
             const t = this;
             t.resetData();
-            if(!val) return;
-            t.rendererTable = false;
-            t.$nextTick().then(() => {
-                t.rendererTable = true;
-                t.init()
-            })
+            if(val) t.init();
         },
 
         //接收推送返回的数据
@@ -180,6 +175,12 @@ export default {
             const t = this;
             if(!val || t.getDataLock) return
             t.dealNanomsg(val)
+        },
+
+        tradingDay() {
+            const t = this;
+            t.resetData();
+            if(t.currentId) t.init();
         }
     },
 
@@ -187,13 +188,14 @@ export default {
         const t = this;
         t.rendererTable = true;
         t.resetData();
-        t.currentId && t.init();
+        if(t.currentId) t.init();
     },
 
     methods: {
         handleRefresh(){
             const t = this;
-            t.currentId && t.init()
+            t.resetData();
+            if(t.currentId) t.init();
         },
 
         //选择日期以及保存
@@ -202,7 +204,7 @@ export default {
             t.getDataMethod(t.currentId, {
                 id: t.filter.id,
                 dateRange
-            }, t.calendar.trading_day).then(res => {
+            }, t.tradingDay).then(res => {
                 if(!res) return;
                 t.$saveFile({
                     title: '委托记录',
@@ -228,25 +230,23 @@ export default {
                 return;
             }
             //撤单
-            t.$message.info('正在发送撤单指令...')           
+            t.$message.info('正在发送撤单指令...')     
             nanoCancelOrder({
-                gatewayName,
+                accountId,
                 orderId: props.orderId
             })
-            .then(() => t.$message.success(`撤单指令已发送！`))
+            .then(() => t.$message.success('撤单指令已发送！'))
+            .catch(err => t.$message.error(err.message || '撤单指令发送失败！'))
         },
 
         handleCancelAllOrders(){
             const t = this;
+            if(!t.accountList.length) return;
+
             //先判断对应进程是否启动
             if(t.moduleType === 'account'){
                 if(t.processStatus[t.gatewayName] !== 'online') {
                     t.$message.warning(`需要先启动 ${t.gatewayName.toAccountId()} 交易进程！`)
-                    return;
-                }
-            }else if(t.moduleType === 'strategy'){
-                if(t.processStatus[t.currentId] !== 'online') {
-                    t.$message.warning(`需要先启动 ${t.currentId} 策略进程！`)
                     return;
                 }
             }
@@ -273,19 +273,19 @@ export default {
         handleCheckTodayFinished(){
             const t = this;
             t.todayFinish = true;
-            const tradingDay = t.calendar.trading_day;
+            const tradingDay = t.tradingDay;
             const momentDay = tradingDay ? moment(tradingDay) : moment();
             //获取当天是日期范围
             const startDate = momentDay.format('YYYY-MM-DD')
             const endDate = momentDay.add(1,'d').format('YYYY-MM-DD')
             t.filter.dateRange = [startDate, endDate];
-            !!t.currentId && t.init()
+            if(t.currentId) t.init();
         },
 
         handleCheckTodayUnfinished(){
             const t = this;
             t.resetData();
-            !!t.currentId && t.init()
+            if(t.currentId) t.init();
         },
 
         init: debounce(function() {
@@ -300,7 +300,7 @@ export default {
             //clear Data
             t.orderDataByKey = {};
             t.tableData = []
-            return t.getDataMethod(t.currentId, t.filter, t.calendar.trading_day)
+            return t.getDataMethod(t.currentId, t.filter, t.tradingDay)
             .then(res => {
                 if(!res) {
                     t.tableData = Object.freeze([]);                    
@@ -354,17 +354,20 @@ export default {
             //推送的时候也要满足筛选条件
             if(!(order_id.toString().includes(id) || data.instrument_id.includes(id) || data.client_id.includes(id))) return
 
-            //status为3,4,5,6的时候不显示在当前委托中
-            if([3, 4, 5, 6].indexOf(+status) !== -1) {
+            //status为0,3,4,5,6的时候不显示在当前委托中
+            if([0, 3, 4, 5, 6].indexOf(+status) !== -1) {
                 if(!t.orderDataByKey[order_id]) return
                 t.orderDataByKey[order_id] = null;
                 delete t.orderDataByKey[order_id]
             }else {
-                t.orderDataByKey[order_id] = dealOrder(data)
+                t.orderDataByKey[order_id] = {
+                    ...dealOrder(data),
+                    nano: true
+                }
             }
             //更新数据, 根据ID来排序
             const sortOrderList = Object.values(t.orderDataByKey).sort((a, b) =>{
-                return b.orderId - a.orderId
+                return  b.updateTimeNum - a.updateTimeNum
             })
             t.tableData = Object.freeze(sortOrderList.slice(0, 200))
         },

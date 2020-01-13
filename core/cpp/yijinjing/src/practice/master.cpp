@@ -29,6 +29,11 @@ namespace kungfu
             writers_[0]->mark(time::now_in_nano(), msg::type::SessionStart);
         }
 
+        void master::on_exit()
+        {
+            writers_[0]->mark(time::now_in_nano(), msg::type::SessionEnd);
+        }
+
         void master::on_notify()
         {
             get_io_device()->get_publisher()->notify();
@@ -64,8 +69,12 @@ namespace kungfu
             register_location(e->gen_time(), app_location);
 
             auto master_location = get_location(app_locations_[app_location->uid]);
-            auto writer = get_io_device()->open_writer_at(master_location, app_location->uid);
-            writers_[app_location->uid] = writer;
+            writers_[app_location->uid] = get_io_device()->open_writer_at(master_location, app_location->uid);
+
+            reader_->join(app_location, 0, now);
+            reader_->join(app_location, master_location->uid, now);
+                
+            auto &writer = writers_[app_location->uid];
 
             {
                 auto msg = request_loc.dump();
@@ -74,9 +83,9 @@ namespace kungfu
                 writers_[0]->close_frame(msg.length());
             }
 
-            reader_->join(app_location, 0, now);
+            writer->mark(e->gen_time(), msg::type::SessionStart);
+
             require_write_to(app_location->uid, e->gen_time(), 0);
-            reader_->join(app_location, master_location->uid, now);
             require_write_to(app_location->uid, e->gen_time(), master_location->uid);
 
             for (const auto &item : locations_)
@@ -87,11 +96,18 @@ namespace kungfu
                 location["group"] = item.second->group;
                 location["name"] = item.second->name;
                 auto msg = location.dump();
-                auto frame = writer->open_frame(e->gen_time(), msg::type::Location, msg.length());
                 SPDLOG_DEBUG("adding location {}", msg);
+                auto &&frame = writer->open_frame(e->gen_time(), msg::type::Location, msg.length());
                 memcpy(reinterpret_cast<void *>(frame->address() + frame->header_length()), msg.c_str(), msg.length());
                 writer->close_frame(msg.length());
             }
+
+            for(const auto& item: channels_)
+            {
+                writer->write(e->gen_time(), msg::type::Channel, item.second);
+            }
+
+            on_register(e, app_location);
 
             writer->mark(e->gen_time(), msg::type::RequestStart);
         }
@@ -107,14 +123,20 @@ namespace kungfu
             location_desc["uname"] = location->uname;
             location_desc["uid"] = app_location_uid;
 
+            writers_[app_location_uid]->mark(trigger_time, msg::type::SessionEnd);
+
+            deregister_channel_by_source(app_location_uid);
+
             deregister_location(trigger_time, app_location_uid);
             reader_->disjoin(app_location_uid);
+            writers_.erase(app_location_uid);
             timer_tasks_.erase(app_location_uid);
 
             auto msg = location_desc.dump();
-            auto frame = writers_[0]->open_frame(trigger_time, msg::type::Deregister, msg.length());
+            auto &&frame = writers_[0]->open_frame(trigger_time, msg::type::Deregister, msg.length());
             memcpy(reinterpret_cast<void *>(frame->address() + frame->header_length()), msg.c_str(), msg.length());
             writers_[0]->close_frame(msg.length());
+
         }
 
         void master::publish_time(int32_t msg_type, int64_t nanotime)
@@ -124,7 +146,19 @@ namespace kungfu
 
         void master::send_time(uint32_t dest, int32_t msg_type, int64_t nanotime)
         {
-            writers_[dest]->write(0, msg_type, nanotime);
+            if (has_location(dest))
+            {
+                writers_[dest]->write(0, msg_type, nanotime);
+            } else
+            {
+                SPDLOG_ERROR("Can not send time to {:08x}", dest);
+            }
+        }
+
+        void master::register_channel(int64_t trigger_time, const yijinjing::msg::data::Channel &channel)
+        {
+            hero::register_channel(trigger_time, channel);
+            writers_[0]->write(trigger_time, msg::type::Channel, channel);
         }
 
         bool master::produce_one(const rx::subscriber<yijinjing::event_ptr> &sb)
@@ -169,7 +203,6 @@ namespace kungfu
             $([&](event_ptr e)
               {
                   register_app(e);
-                  on_register(e);
               });
 
             events_ | is(msg::type::RequestWriteTo) |
@@ -181,6 +214,10 @@ namespace kungfu
                       reader_->join(get_location(e->source()), request.dest_id, e->gen_time());
                       require_write_to(e->source(), e->gen_time(), request.dest_id);
                       require_read_from(request.dest_id, e->gen_time(), e->source(), false);
+                      msg::data::Channel channel = {};
+                      channel.source_id = e->source();
+                      channel.dest_id = request.dest_id;
+                      register_channel(e->gen_time(), channel);
                   } else
                   {
                       SPDLOG_ERROR("Request write to unknown location {:08x}", request.dest_id);
@@ -196,6 +233,10 @@ namespace kungfu
                       reader_->join(get_location(request.source_id), e->source(), e->gen_time());
                       require_write_to(request.source_id, e->gen_time(), e->source());
                       require_read_from(e->source(), e->gen_time(), request.source_id, false);
+                      msg::data::Channel channel = {};
+                      channel.source_id = request.source_id;
+                      channel.dest_id = e->source();
+                      register_channel(e->gen_time(), channel);
                   } else
                   {
                       SPDLOG_ERROR("Request read from unknown location {:08x}", request.source_id);
@@ -234,16 +275,6 @@ namespace kungfu
                   task.repeat_count = 0;
                   task.repeat_limit = request.repeat;
                   SPDLOG_DEBUG("time request from {} duration {} repeat {}", get_location(e->source())->uname, request.duration, request.repeat);
-              });
-
-            events_ |
-            filter([=](yijinjing::event_ptr e)
-                   {
-                       return dynamic_cast<nanomsg::nanomsg_json *>(e.get()) != nullptr;
-                   }) |
-            $([&](event_ptr e)
-              {
-                  on_json(e);
               });
         }
     }

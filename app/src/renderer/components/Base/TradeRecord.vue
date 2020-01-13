@@ -75,14 +75,14 @@ export default {
 
     computed:{
         ...mapState({
-            calendar: state => state.BASE.calendar, //日期信息，包含交易日
+            tradingDay: state => state.BASE.tradingDay, //日期信息，包含交易日
         }),
 
         schema(){
             return [{
                 type: 'text',
                 label: '成交时间',
-                prop: 'tradeTime',
+                prop: 'updateTime',
                 width: '160px'
             },{
                 type: 'text',
@@ -125,19 +125,14 @@ export default {
             deep: true,
             handler() {
                 const t = this;
-                t.currentId && t.init(true)
+                if(t.currentId) t.init();
             }
         },
         
         currentId(val) {
             const t = this;
             t.resetData();
-            if(!val) return;
-            t.rendererTable = false;
-            t.$nextTick().then(() => {
-                t.rendererTable = true;
-                t.init();
-            })
+            if(val) t.init();
         },
 
         //接收推送返回的数据
@@ -145,6 +140,12 @@ export default {
             const t = this;
             if(!val || t.getDataLock) return
             t.dealNanomsg(val)
+        },
+
+        tradingDay() {
+            const t = this;
+            t.resetData();
+            if(t.currentId) t.init();
         }
 
     },
@@ -153,14 +154,14 @@ export default {
         const t = this;
         t.rendererTable = true;
         t.resetData();
-        t.currentId && t.init();
+        if(t.currentId) t.init();
     },
 
     methods:{
         handleRefresh(){
             const t = this;
             t.resetData();
-            t.currentId && t.init();
+            if(t.currentId) t.init();
         },
 
         //选择日期以及保存
@@ -169,7 +170,7 @@ export default {
             t.getDataMethod(t.currentId, {
                 id: t.filter.id,
                 dateRange
-            }, t.calendar.trading_day).then(res => {
+            }, t.tradingDay).then(res => {
                 if(!res) return;
                 t.$saveFile({
                     title: '成交记录',
@@ -206,7 +207,7 @@ export default {
             t.getDataLock = true
             t.tableData = Object.freeze([])
             //id:用户或者交易id，filter：需要筛选的数据
-            return t.getDataMethod(t.currentId, t.filter, t.calendar.trading_day).then(res => {
+            return t.getDataMethod(t.currentId, t.filter, t.tradingDay).then(res => {
                 if(!res || !res.length) {
                     t.tableData = Object.freeze([])
                     return;
@@ -232,10 +233,13 @@ export default {
             const { id, dateRange } = t.filter
             const { trade_time } = data
             if(!((data.instrument_id.includes(id) || data.client_id.includes(id)) )) return
-            const tradeData = dealTrade(data)
+            const tradeData = {
+                ...dealTrade(data),
+                nano: true
+            }
             t.throttleInsertTrade(tradeData).then(tradeList => {
                 if(!tradeList) return;
-                let oldTableData = t.tableData.slice(0, 500);
+                let oldTableData = t.tableData;
                 oldTableData = [...tradeList, ...oldTableData]
                 //更新数据
                 t.tableData = Object.freeze(oldTableData)

@@ -69,7 +69,7 @@
             }
 
             .header-item{
-                padding: 0 10px;
+                padding: 0 0 5px 20px;
                 height: 30px;
                 line-height: 30px;
                 color: #7D89B8;
@@ -86,6 +86,7 @@
                 box-sizing: border-box;
                 font-family: Consolas, Monaco, monospace,"Microsoft YaHei",sans-serif;
                 line-height: 24px;
+                word-break: break-all
             }
             .red {
                 color: #ff3636;
@@ -103,6 +104,27 @@
                 display: block;
             }
 
+            .button {
+                background: #2C3450;
+                height: 26px;
+                line-height: 26px;
+                border-radius: 3px;
+                box-sizing: border-box;
+                cursor: pointer;
+                width: 50px;
+                text-align: center;
+                color: #7D89B8;
+                font-size: 11px;
+            }
+
+            .button:hover {
+                background: #424C6E;
+                color: #fff;
+            }
+
+            .fr {
+                float: right;
+            }
 
             ::-webkit-scrollbar-track{    
                 background: #101425;
@@ -136,12 +158,22 @@
     </head>
     <body>
         <div id="content">
-            <div class="header-item" >
-                <input type="checkbox" id="scroll-to-bottom-checkbox"></input> 滚动到底部
+            <div class="header-content">
+                    <div class="header-item fr">
+                            <div class="button" id="fresh-btn">刷新</div>
+                    </div>
+                    <div class="header-item fr">
+                            <div class="button" id="clear-btn">清空</div>
+                    </div>
+                    <div class="header-item fr" >
+                        <input type="checkbox" id="scroll-to-bottom-checkbox"></input> 滚动到底部
+                    </div>
+                    <div class="header-item fr" >
+                        <input type="checkbox" id="norwap-checkbox"></input> 单行显示
+                    </div>
+                  
             </div>
-            <div class="header-item" >
-                    <input type="checkbox" id="norwap-checkbox"></input> 换行显示
-                </div>
+            
             <div id="log-content"></div>
         </div>
        
@@ -151,31 +183,21 @@
     const fs = require('fs-extra');
     const ipc = require('electron').ipcRenderer
     const BrowserWindow = require('electron').remote.BrowserWindow;
-    const { getLog, debounce } = require('./utils.js');
+    const { getLog, debounce, clearFileContent } = require('./utils.js');
     const gaze = require('gaze');
 
-    var getGlobalData = buildGLobalData();
+    var getGlobalData = {
+        ifScrollToBottom: false,
+        logPath: ''
+    }
 
-    function buildGLobalData() {
-        var ifScrollToBottom = false;
-
-        document.getElementById('scroll-to-bottom-checkbox').addEventListener('input', () => {
-            ifScrollToBottom = !ifScrollToBottom;
-        })
-
-        document.querySelector('#log-content').style.whiteSpace = 'nowrap'
-        document.getElementById('norwap-checkbox').addEventListener('input', () => {
-            const $logContent = document.querySelector('#log-content');            
-            const whiteSpace = $logContent.style.whiteSpace;
-            if(whiteSpace != 'nowrap') $logContent.style.whiteSpace = 'nowrap';
-            else $logContent.style.whiteSpace = '';
-        })
-
-        return function(){
-            return {
-                ifScrollToBottom,
-            }
-        }
+    const logColor = {
+        info: 'green',
+        trace: '',
+        error: 'red',
+        warning: 'yellow',
+        debug: 'blue',
+        critical: 'red'
     }
 
     function dealMessage(line) {
@@ -183,25 +205,27 @@
         try{
             lineData = JSON.parse(line);
         }catch(err){
-            console.error(err)
             return false;
         }
-        let message = lineData.message
-        .split('\n[')
-        .join('<br\>[')
-        .replace(/\[  info  \]/g, '[ <span class="green">info</span> &nbsp;&nbsp;&nbsp;]')
-        .replace(/\[ trace  \]/g, '[ trace &nbsp;&nbsp;]')
-        .replace(/\[ error  \]/g, '[ <span class="red">error</span> &nbsp;&nbsp;]')
-        .replace(/\[warning \]/g, '[ <span class="yellow">warning</span> ]')
-        .replace(/\[ debug  \]/g, '[ <span class="blue">debug</span> &nbsp;&nbsp;]')
-        .replace(/\[critical\]/g, '[ critical]')
-        if(
-            message.indexOf('Failed') !== -1 ||
-            message.indexOf('Traceback') !== -1 ||
-            message.indexOf('critical') !== -1 ||
-            message.indexOf('uncaught exception') !== -1
-        ) message = `<span class="error red">${message}</span>`
-        return [ { message } ]
+        let messages = lineData.message.split('\n').filter(m => m !== '');
+        return messages.map(message => {
+            message = message.split('\n[')
+                .join('<br\>[')
+                .replace(/\[  info  \]/g, `[ <span class="${logColor.info}">info</span> &nbsp;&nbsp;&nbsp;]`)
+                .replace(/\[ trace  \]/g, '[ trace &nbsp;&nbsp;]')
+                .replace(/\[ error  \]/g, `[ <span class="${logColor.error}">error</span> &nbsp;&nbsp;]`)
+                .replace(/\[warning \]/g, `[ <span class="${logColor.warning}">warning</span> ]`)
+                .replace(/\[ debug  \]/g, `[ <span class="${logColor.debug}">debug</span> &nbsp;&nbsp;]`)
+                .replace(/\[critical\]/g, `[ <span class="${logColor.critical}">critical</span>]`)
+            if(
+                message.indexOf('Failed') !== -1 ||
+                message.indexOf('Traceback') !== -1 ||
+                message.indexOf('critical') !== -1 ||
+                message.indexOf('uncaught exception') !== -1
+            ) 
+            message = `<span class="error red">${message}</span>`
+            return { message }
+        })
     }
 
     function scrollToBottom() {
@@ -227,6 +251,7 @@
     ipc.on('show-log', function(event, { winId, logPath }){
         ipc.removeAllListeners('show-log')
         document.title = logPath;
+        getGlobalData.logPath = logPath
         showLogs(logPath, dealMessage).then(() => scrollToBottom())
         gaze(logPath, (err, watcher) => {
             const watched = watcher.watched();
@@ -235,5 +260,30 @@
             }))
         })
     })
+
+    document.getElementById('clear-btn').addEventListener('click', () => {
+        const logPath = getGlobalData.logPath;
+        if(!logPath) return;
+        clearFileContent(logPath)
+    })
+
+    document.getElementById('fresh-btn').addEventListener('click', () => {
+        const logPath = getGlobalData.logPath;
+        if(!logPath) return;
+        showLogs(logPath, dealMessage).then(() => scrollToBottom())
+    })
+
+    document.getElementById('scroll-to-bottom-checkbox').addEventListener('input', () => {
+            getGlobalData.ifScrollToBottom = !getGlobalData.ifScrollToBottom
+            if(getGlobalData.ifScrollToBottom) scrollToBottom();
+        })
+
+    const $logContent = document.querySelector('#log-content');            
+    $logContent.style.whiteSpace = ''
+    document.getElementById('norwap-checkbox').addEventListener('input', () => {
+        if($logContent.style.whiteSpace !== '') $logContent.style.whiteSpace = '';
+        else $logContent.style.whiteSpace = 'nowrap';
+    })
+
     </script>
 </html>

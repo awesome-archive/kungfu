@@ -53,7 +53,14 @@ namespace kungfu
             frame_ptr writer::open_frame(int64_t trigger_time, int32_t msg_type, uint32_t data_length)
             {
                 assert(sizeof(frame_header) + data_length + sizeof(frame_header) <= journal_->current_page_->get_page_size());
-                writer_mtx_.lock();
+                int64_t t = time::now_in_nano();
+                while (not writer_mtx_.try_lock())
+                {
+                    if (time::now_in_nano() - t > time_unit::NANOSECONDS_PER_MILLISECOND)
+                    {
+                        throw journal_error("Can not lock writer for " + journal_->location_->uname);
+                    }
+                }
                 if (journal_->current_frame()->address() + sizeof(frame_header) + data_length > journal_->current_page_->address_border())
                 {
                     close_page(trigger_time);
@@ -70,6 +77,9 @@ namespace kungfu
             void writer::close_frame(size_t data_length)
             {
                 auto frame = journal_->current_frame();
+                auto next_frame_address = frame->address() + frame->header_length() + data_length;
+                assert(next_frame_address < journal_->current_page_->address_border());
+                memset(reinterpret_cast<void *>(next_frame_address), 0, sizeof(frame_header));
                 frame->set_gen_time(time::now_in_nano());
                 frame->set_data_length(data_length);
                 journal_->current_page_->set_last_frame_position(frame->address() - journal_->current_page_->address());
@@ -98,31 +108,41 @@ namespace kungfu
                 frame->set_msg_type(msg_type);
                 frame->set_source(journal_->location_->uid);
                 frame->set_dest(journal_->dest_id_);
+                memset(reinterpret_cast<void *>(frame->address() + frame->header_length()), 0, sizeof(frame_header));
                 frame->set_gen_time(gen_time);
                 frame->set_data_length(0);
                 journal_->current_page_->set_last_frame_position(frame->address() - journal_->current_page_->address());
                 journal_->next();
             }
 
-            void writer::write_raw(int64_t trigger_time, int32_t msg_type, char *data, uint32_t length)
+            void writer::write_raw(int64_t trigger_time, int32_t msg_type, uintptr_t data, uint32_t length)
             {
                 auto frame = open_frame(trigger_time, msg_type, length);
-                memcpy(const_cast<void*>(frame->data_address()), data, length);
+                memcpy(const_cast<void*>(frame->data_address()), reinterpret_cast<void*>(data), length);
                 close_frame(length);
+            }
+            template<>
+            void writer::write(int64_t trigger_time, int32_t msg_type, const std::string &data)
+            {
+                write_raw(trigger_time, msg_type, reinterpret_cast<uintptr_t>(data.c_str()), data.length());
             }
 
             void writer::close_page(int64_t trigger_time)
             {
-                auto frame = journal_->current_frame();
-                frame->set_header_length();
-                frame->set_trigger_time(trigger_time);
-                frame->set_msg_type(msg::type::PageEnd);
-                frame->set_source(journal_->location_->uid);
-                frame->set_dest(journal_->dest_id_);
-                frame->set_gen_time(time::now_in_nano());
-                frame->set_data_length(0);
-                journal_->current_page_->set_last_frame_position(frame->address() - journal_->current_page_->address());
+                page_ptr last_page = journal_->current_page_;
                 journal_->load_next_page();
+
+                frame last_page_frame;
+                last_page_frame.set_address(last_page->last_frame_address());
+                last_page_frame.move_to_next();
+                last_page_frame.set_header_length();
+                last_page_frame.set_trigger_time(trigger_time);
+                last_page_frame.set_msg_type(msg::type::PageEnd);
+                last_page_frame.set_source(journal_->location_->uid);
+                last_page_frame.set_dest(journal_->dest_id_);
+                last_page_frame.set_gen_time(time::now_in_nano());
+                last_page_frame.set_data_length(0);
+                last_page->set_last_frame_position(last_page_frame.address() - last_page->address());
             }
         }
     }

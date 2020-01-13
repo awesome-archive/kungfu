@@ -32,20 +32,20 @@ namespace kungfu
             {
                 if (current_page_.get() != nullptr)
                 {
-                    current_page_->release();
+                    current_page_.reset();
                 }
             }
 
             void journal::next()
             {
                 assert(current_page_.get() != nullptr);
-
-                frame_->move_to_next();
-                page_frame_nb_++;
-
                 if (frame_->msg_type() == msg::type::PageEnd)
                 {
                     load_next_page();
+                } else
+                {
+                    frame_->move_to_next();
+                    page_frame_nb_++;
                 }
             }
 
@@ -72,10 +72,6 @@ namespace kungfu
 
             void journal::load_page(int page_id)
             {
-                if (current_page_.get() != nullptr)
-                {
-                    current_page_->release();
-                }
                 if (current_page_.get() == nullptr or current_page_->get_page_id() != page_id)
                 {
                     current_page_ = page::load(location_, dest_id_, page_id, is_writing_, lazy_);

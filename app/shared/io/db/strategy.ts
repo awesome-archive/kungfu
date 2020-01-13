@@ -48,26 +48,42 @@ export const updateStrategyPath = (strategy_id: string, strategy_path: string) =
     return runInsertUpdateDeleteDB(STRATEGYS_DB, 'UPDATE strategys SET strategy_path = ? WHERE strategy_id = ?', [strategy_path, strategy_id])    
 }
 
-/**
- * 获取某策略下委托
- */
-export const getStrategyOrder = async(strategyId: string, {id, dateRange}: TradingDataFilter, tradingDay: string) => {
-    dateRange = dateRange || [];
-    id = id || ''
+
+export const getStrategyAssetById = (strategyId: string) => {
+    return runSelectDB(
+        LIVE_TRADING_DATA_DB, 
+        'SELECT * FROM asset' + 
+        ' WHERE ledger_category = 1' +
+        ` AND client_id = "${strategyId}"`
+    )
+}
+
+const getStrategyAddTime = async (strategyId: string): Promise<number | undefined> => {
     //新建与之前重名策略，防止get之前的数据
     const strategys = await getStrategyById(strategyId)
     if(!strategys[0]) throw new Error('找不到该策略！');
-    const strategyAddTime = strategys[0].add_time;
-    const filterDate = buildDateRange(dateRange, tradingDay, strategyAddTime)    
+    return strategys[0].add_time;
+}
+
+/**
+ * 获取某策略下委托
+ */
+export const getStrategyOrder = async (strategyId: string, {id, dateRange}: TradingDataFilter, tradingDay?: string) => {
+    dateRange = dateRange || [];
+    id = id || ''
+    //新建与之前重名策略，防止get之前的数据
+    const strategyAddTime = await getStrategyAddTime(strategyId);
+    const filterDate = buildDateRange(dateRange, tradingDay)    
     return runSelectDB(
         LIVE_TRADING_DATA_DB, 
         `SELECT * FROM orders` +
         ` WHERE client_id = '${strategyId}'` + 
         ` AND (order_id LIKE '%${id}%'` + 
         ` OR instrument_id LIKE '%${id}%')` + //有id筛选的时候
-        ` AND insert_time >= ${filterDate[0]}` + 
-        ` AND insert_time < ${filterDate[1]}` +
-        (dateRange.length ? `` : ` AND status NOT IN (3,4,5,6)`) + //有日期筛选的时候,获取所有状态的数据；无日期的时候，获取的是当天的且未完成的
+        ` AND trading_day >= ${filterDate[0]}` +
+        ` AND trading_day <= ${filterDate[1]}` +
+        ` AND update_time > ${strategyAddTime}` +
+        (dateRange.length ? `` : ` AND status NOT IN (0,3,4,5,6)`) + //有日期筛选的时候,获取所有状态的数据；无日期的时候，获取的是当天的且未完成的
         ` ORDER BY insert_time DESC`
     )
 }
@@ -75,21 +91,20 @@ export const getStrategyOrder = async(strategyId: string, {id, dateRange}: Tradi
 /**
  * 获取某策略下成交
  */
-export const getStrategyTrade = async(strategyId: string, { id, dateRange }: TradeInputData, tradingDay: string) => {
+export const getStrategyTrade = async (strategyId: string, { id, dateRange }: TradeInputData, tradingDay?: string) => {
     dateRange = dateRange || [];
     id = id || ''
     //新建与之前重名策略，防止get之前的数据    
-    const strategys = await getStrategyById(strategyId)
-    if(!strategys[0]) throw new Error('找不到该策咯！');
-    const strategyAddTime = strategys[0].add_time;
-    const filterDate = buildDateRange(dateRange, tradingDay, strategyAddTime)
+    const strategyAddTime = await getStrategyAddTime(strategyId);
+    const filterDate = buildDateRange(dateRange, tradingDay)
     return runSelectDB(
         LIVE_TRADING_DATA_DB,
         `SELECT rowId, * FROM trades` +
         ` WHERE client_id = '${strategyId}'` + 
         ` AND instrument_id LIKE '%${id}%'` + //有id筛选的时候
-        ` AND trade_time >= ${filterDate[0]}` + 
-        ` AND trade_time < ${filterDate[1]}` +
+        ` AND trading_day >= ${filterDate[0]}` +
+        ` AND trading_day <= ${filterDate[1]}` +
+        ` AND trade_time > ${strategyAddTime}` +
         ` ORDER BY trade_time DESC`
     )
 }
@@ -97,54 +112,49 @@ export const getStrategyTrade = async(strategyId: string, { id, dateRange }: Tra
 /**
  * 获取某策略下的持仓
  */
-export const getStrategyPos = (strategyId: string, { instrumentId }: TradingDataFilter) => {
+export const getStrategyPos = async (strategyId: string, { instrumentId }: TradingDataFilter) => {
     instrumentId = instrumentId || '';
+    const strategyAddTime = await getStrategyAddTime(strategyId);
     return runSelectDB(
         LIVE_TRADING_DATA_DB,
-        `SELECT * FROM portfolio_position` + 
-        ` WHERE client_id = "${strategyId}"` + 
+        `SELECT * FROM position` + 
+        ` WHERE ledger_category = 1` + 
+        ` AND volume != 0` +
+        ` AND client_id = "${strategyId}"` + 
         ` AND instrument_id LIKE '%${instrumentId}%'` +
+        ` AND update_time > ${strategyAddTime}` + 
         ` ORDER BY instrument_id`
     )
-    .then((pos: PosInputData[]): any => {
-        let posList: any = {}
-        //策略的pos是一条一条成交记录？
-        pos.map((item: PosInputData): void => {
-            let key = item.instrument_id + item.direction
-            if(posList[key]) {
-                posList[key].yesterday_volume = posList[key].yesterday_volume + item.yesterday_volume
-                posList[key].volume = posList[key].volume + item.volume
-                posList[key].last_price = posList[key].last_price + item.last_price
-                posList[key].margin = posList[key].margin + item.margin
-            }else{
-                posList[key] = item
-            }
-        })
-        return Object.values(posList);
-    })
 }
 
 /**
  * 获取某策略下收益曲线分钟线
  */
-export const getStrategyPnlMin = (strategyId: string, tradingDay: string) => {
-    if(!tradingDay) throw new Error('无交易日！')
+export const getStrategyPnlMin = async (strategyId: string, tradingDay: string) => {
+    if(!tradingDay) throw new Error('无交易日！');
+    if(!strategyId) return new Promise(resolve => resolve([]))
+    tradingDay = moment(tradingDay).format('YYYYMMDD');
+    const strategyAddTime = await getStrategyAddTime(strategyId);
     return runSelectDB(
         LIVE_TRADING_DATA_DB, 
-        `SELECT * FROM portfolio_snapshot` + 
-        ` WHERE trading_day = '${tradingDay}'` + 
-        ` AND client_id = '${strategyId}'`
+        `SELECT * FROM asset_snapshot` + 
+        ` WHERE ledger_category = 1` +
+        ` AND trading_day = '${tradingDay}'` + 
+        ` AND client_id = '${strategyId}'` +
+        ` AND update_time > ${strategyAddTime}`
     )
 }
 
 /**
  * 获取某策略下收益曲线日线
  */
-export const getStrategyPnlDay = (strategyId: string) => {
+export const getStrategyPnlDay = async (strategyId: string) => {
+    const strategyAddTime = await getStrategyAddTime(strategyId);
     return runSelectDB(
         LIVE_TRADING_DATA_DB,
-        'SELECT * FROM (select * from portfolio_snapshot ORDER BY update_time DESC)' + 
+        'SELECT * FROM (select * from asset_snapshot WHERE ledger_category = 1 ORDER BY update_time DESC)' + 
         ` where client_id = '${strategyId}'` +
+        ` AND update_time > "${strategyAddTime}"` +
         ` GROUP BY trading_day`
     )
 }
@@ -165,6 +175,4 @@ export const getStrategysPnl = (ids: string[], tradingDay: string): Promise<Last
     }))
     return Promise.all(promises)
 }
-
-
 

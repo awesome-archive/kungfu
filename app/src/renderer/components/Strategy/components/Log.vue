@@ -45,11 +45,20 @@ const BrowserWindow = require('electron').remote.BrowserWindow;
 export default {
     name: 'log',
     data() {
+        this.logColor = {
+            info: 'green',
+            trace: '',
+            error: 'red',
+            warning: 'yellow',
+            debug: 'blue',
+            critical: 'red'
+        }
+
         this.schema = [
             {
                 label: '时间',
                 prop: 'updateTime',
-                width: '230px'
+                width: '200px'
             },
             {
                 label: '类型',
@@ -90,7 +99,7 @@ export default {
             t.processId && t.init(t.processId, t.logPath, t.searchKeyword)
         }),
 
-        processId(val){
+        processId: debounce(function(val){
             const t = this;
             t.resetData();
             if(!val) return;
@@ -99,6 +108,11 @@ export default {
                 t.rendererTable = true;
                 t.init(t.processId, t.logPath)
             })
+        }, 100),
+
+        ifScrollToBottom(val){
+            const t = this;
+            if(val) t.scrollToBottom()
         }
     },
 
@@ -160,12 +174,21 @@ export default {
             }).finally(() => {
                 t.startWatchingTail(processId, logPath, searchKeyword)
             })
-        }),
+        }, 100),
 
         getLogByTask(logPath, searchKeyword){
             const t = this;
             return new Promise((resolve, reject) => {
-                buildTask('getStrategyLog', BrowserWindow.getFocusedWindow(), BrowserWindow).then(({ win, curWinId }) => {
+                buildTask(
+                    'getStrategyLog', 
+                    BrowserWindow.getFocusedWindow(),
+                    BrowserWindow,
+                    // {
+                    //     width: 800,
+                    //     height: 600,
+                    //     show: true
+                    // }
+                ).then(({ win, curWinId }) => {
                     win.webContents.send('get-strategy-log', {
                         winId: curWinId,
                         logPath,
@@ -182,23 +205,23 @@ export default {
         //开始监听日志尾部
         startWatchingTail(processId, logPath, searchKeyword){
             const t = this;
-            let timer = null;
+            t.clearTailWatcher();
             let logWaitList = [];
             let throttleInsertLog = throttleInsert(500)
             let throttleClearLog = throttle(() => {
                     const len = t.tableData.length
                     if(len > 1000) t.tableData = t.tableData.slice(len - 1000, len)
                 }, 60000);
-                
+            
             t.tailObserver = new Tail(logPath, {
                 flushAtEOF: true,
-                useWatchFile: platform === 'mac',
+                useWatchFile: true,
                 follow: true,
             });   
             t.tailObserver.watch();  
             t.tailObserver.on('line', line => ((curProcId, curKw) => {
                 if(curKw) return;
-                if(curProcId !== processId) return;
+                if(curProcId !== t.processId) return;
                 const logData = dealLogMessage(line, t.searchKeyword);
                 throttleInsertLog(logData).then(logList => {
                     if(!logList) return;
@@ -223,6 +246,7 @@ export default {
                 if(!item || !item.message) return;
                 tableData.push(Object.freeze({
                     ...item,
+                    nano: true,
                     id: t.logCount
                 }))
             }) 
@@ -258,11 +282,13 @@ export default {
 
         renderCellClass(prop, item){
             const t = this;
-            if(item.type === 'error'){
-                return 'red'
-            }else{
-                return ''
+            if(prop === 'type') {
+                return t.logColor[item.type] || ''
             }
+            if(item.type === 'error' || item.type === 'critical') {
+                return t.logColor[item.type]
+            }
+            
         },
     }
 }

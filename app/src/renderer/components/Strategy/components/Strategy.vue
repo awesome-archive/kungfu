@@ -76,7 +76,9 @@
     v-if="setStrategyDialogVisiblity"
     :visible.sync="setStrategyDialogVisiblity" 
     :close-on-click-modal="false"
+    :close-on-press-escape="true"
     @close="handleClearAddStrategyDialog"
+    @keyup.enter.native="handleConfirmAddEditorStrategy"
     >
         <el-form ref="setStrategyForm" label-width="90px" :model="setStrategyForm">
             <!-- 自定义部分 -->
@@ -92,7 +94,11 @@
                 {validator: noZeroAtFirstValidator, trigger: 'blur'}
                 ]"
             >
-                <el-input v-model.trim="setStrategyForm.strategyId" :disabled="setStrategyDialogType == 'set'" placeholder="请输入策略名称"></el-input>
+                <el-input 
+                v-model.trim="setStrategyForm.strategyId" 
+                :disabled="setStrategyDialogType == 'set'"
+                 placeholder="请输入策略名称"
+                 ></el-input>
             </el-form-item>
             <el-form-item
             label="入口文件"
@@ -101,7 +107,7 @@
                 { required: true, message: '请选择策略入口文件路径', trigger: 'blur' },
             ]"
             >
-                <span class="strategy-path-selection-in-dialog text-overflow" :title="setStrategyForm.strategyPath">{{setStrategyForm.strategyPath}}</span>
+                <span class="path-selection-in-dialog text-overflow" :title="setStrategyForm.strategyPath">{{setStrategyForm.strategyPath}}</span>
                 <el-button size="mini" icon="el-icon-more" @click="handleBindStrategyFolder"></el-button>
             </el-form-item>
         </el-form>
@@ -120,10 +126,10 @@ import { mapState, mapGetters } from 'vuex';
 import { openWin } from '__gUtils/busiUtils';
 import { deleteProcess } from '__gUtils/processUtils';
 import * as STRATEGY_API from '__io/db/strategy';
-import { setTasksDB } from '__io/db/base';
 import { switchStrategy } from '__io/actions/strategy';
 import { debounce } from '__gUtils/busiUtils';
 import { chineseValidator, specialStrValidator, noZeroAtFirstValidator } from '__assets/validator';
+
 
 const BrowserWindow = require('electron').remote.BrowserWindow
 
@@ -292,14 +298,13 @@ export default {
         handleStrategySwitch(value, strategy){
             const t = this;
             const strategyId = strategy.strategy_id;
-            t.getStrategyList();
-            switchStrategy(strategyId, value).then(({ type, message }) => t.$message[type](message))
+            switchStrategy(strategyId, value).then(({ type, message }) => t.$message[type](message));
         },
 
         //关闭添加strategy弹窗, refresh数据
         handleClearAddStrategyDialog(){
             const t = this;
-            t.setStrategyForm = {strategyId: '', strategyPath: ''};
+            t.setStrategyForm = { strategyId: '', strategyPath: '' };
             t.setStrategyDialogVisiblity = false;
             t.setStrategyDialogType = ''
         },
@@ -343,13 +348,6 @@ export default {
     height: 23px;
     line-height: 23px;
     padding: 0;
-}
-
-.strategy-path-selection-in-dialog{
-    color: $icon;
-    max-width: 164px;
-    display: inline-block;
-    vertical-align: bottom;
 }
 
 </style>

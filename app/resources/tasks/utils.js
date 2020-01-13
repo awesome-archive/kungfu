@@ -1,5 +1,19 @@
 const readline = require('readline');
 const fs = require('fs-extra'); 
+
+//清空文件内容
+function clearFileContent(filePath) {
+    filePath = path.normalize(filePath)
+    return new Promise((resolve, reject) => {
+        fs.outputFile(filePath, '', (err, data) => {
+            if(err){
+                reject(err);
+                return;
+            }
+            resolve(data)
+        })
+    })
+}
   
 //建立固定条数的list数据结构
 function buildListByLineNum(num){
@@ -45,24 +59,23 @@ function dealMessage(line, searchKeyword){
                 break;
             case 4:
                 messageData = {
-                    updateTime: messageList[0].trim().slice(1).trim(),
-                    type: messageList[1].trim().slice(1).trim(),
-                    action: messageList[2].trim().slice(1).trim(),
-                    message: messageList[3].trim(),
+                    updateTime: lineData.timestamp,
+                    action: '',
+                    message: messageList.join(']')
                 }
                 break;
             default:
-                if(len < 4){
+                if(len < 4) {
                     const type = lineData.type === 'err' ? 'error' 
-                        : lineData.type === 'out' ? 'info' : lineData.type;
+                    : lineData.type === 'out' ? 'info' : lineData.type;
                     messageData = {
                         updateTime: lineData.timestamp,
                         type,
                         pid: '',
                         action: '',
-                        message
+                        message: messageList.slice(0).join(']').trim()
                     }
-                }else{
+                } else {
                     messageData = {
                         updateTime: messageList[0].trim().slice(1).trim(),
                         type: messageList[1].trim().slice(1).trim(),
@@ -85,19 +98,22 @@ function getLog(logPath, searchKeyword, dealMessageFunc){
     const numList = buildListByLineNum(201);    
     let logId = 0;            
     return new Promise((resolve, reject) => {
-        fs.stat(logPath, (err,res) => {
+        fs.stat(logPath, (err,stats) => {
             if(err){
                 reject(err)
                 return;
             }
 
+            const startSize = stats.size - 1000000 < 0 ? 0 : stats.size - 1000000;
             const lineReader = readline.createInterface({
-                input: fs.createReadStream(logPath)
+                input: fs.createReadStream(logPath, {
+                    start: startSize
+                })
             })
 
             lineReader.on('line', line => {
                 const messageData = dealMessageFunc(line, searchKeyword)
-                if(!messageData) return;
+                if(!messageData || !messageData.length) return;
                 messageData.forEach(msg => {
                     if(!msg) return;
                     logId++
@@ -132,34 +148,7 @@ function debounce(fn, interval = 300) {
     }
 }
 
-//开始监听日志尾部
-function startWatchingTail(logPath, searchKeyword){
-    let tailObserver = null;
-    tailObserver = new Tail(logPath, {
-        flushAtEOF: true,
-        useWatchFile: true,
-        follow: true,
-    });   
-    tailObserver.watch();  
-    tailObserver.on('line', line => ((curProcId, curKw) => {
-        if(curKw) return;
-        if(curProcId !== processId) return;
-        const logData = dealLogMessage(line, t.searchKeyword);
-        throttleInsertLog(logData).then(logList => {
-            if(!logList) return;
-            t.tableData = t.pushTableData(logList);
-            if(t.ifScrollToBottom) t.scrollToBottom()
-        })
-        throttleClearLog()
-    })(processId, searchKeyword))
-
-    tailObserver.on('error', err => {
-        if(tailObserver !== null) t.clearTailWatcher();
-        tailObserver = null;
-    }) 
-}
-
-
 exports.getLog = getLog;
 exports.dealMessage = dealMessage;
 exports.debounce = debounce;
+exports.clearFileContent = clearFileContent;

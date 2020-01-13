@@ -8,6 +8,7 @@
 #include <cmath>
 #include <string>
 #include <fmt/format.h>
+#include <kungfu/yijinjing/util/util.h>
 
 #define REGION_CN "CN"
 #define REGION_HK "HK"
@@ -20,7 +21,7 @@
 #define EXCHANGE_CFFEX "CFFEX"
 #define EXCHANGE_INE "INE"
 
-#define SOURCE_PASSIVE "passive"
+#define SOURCE_SIM "sim"
 #define SOURCE_CTP "ctp"
 #define SOURCE_XTP "xtp"
 
@@ -44,11 +45,15 @@ namespace kungfu
 
         enum class InstrumentType: int8_t
         {
-            Unknown,
-            Stock,
-            Future,
-            Bond,
-            StockOption
+            Unknown,       //未知
+            Stock,         //普通股票
+            Future,        //期货
+            Bond,          //债券
+            StockOption,   //股票期权
+            Fund,          //基金
+            TechStock,     //科创板股票
+            Index,         //指数
+            Repo           //回购
         };
 
         enum class ExecType: int8_t
@@ -68,7 +73,11 @@ namespace kungfu
         enum class Side: int8_t
         {
             Buy,
-            Sell
+            Sell,
+            Lock,
+            Unlock,
+            Exec,
+            Drop
         };
 
         enum class Offset: int8_t
@@ -79,6 +88,14 @@ namespace kungfu
             CloseYesterday
         };
 
+        enum class HedgeFlag: int8_t
+        {
+            Speculation,
+            Arbitrage,
+            Hedge,
+            Covered
+        };
+
         enum class OrderActionFlag: int8_t
         {
             Cancel,
@@ -86,12 +103,14 @@ namespace kungfu
 
         enum class PriceType: int8_t
         {
-            Any,
-            Best,
-            Best5,
-            Limit,
-            ForwardBest,
-            ReverseBest
+            Limit,                  //限价,证券通用
+            Any,                    //市价，证券通用，对于股票上海为最优五档剩余撤销，深圳为即时成交剩余撤销，建议客户采用
+            FakBest5,               //上海深圳最优五档即时成交剩余撤销，不需要报价
+            ForwardBest,            //深圳本方方最优价格申报, 不需要报价
+            ReverseBest,            //上海最优五档即时成交剩余转限价, 深圳对手方最优价格申报，不需要报价
+            Fak,                    //深圳即时成交剩余撤销，不需要报价
+            Fok,                    //深圳市价全额成交或者撤销，不需要报价
+            UnKnown
         };
 
         enum class VolumeCondition: int8_t
@@ -142,9 +161,7 @@ namespace kungfu
         enum class LedgerCategory: int8_t
         {
             Account,
-            Portfolio,
-            SubPortfolio,
-            Unknown
+            Strategy,
         };
 
         class wingchun_error : public std::runtime_error
@@ -224,6 +241,44 @@ namespace kungfu
             return std::strncmp(s1.c_str(), s2.c_str(), l) == 0;
         }
 
+        inline bool endswith(const std::string& str, const std::string& suffix)
+        {
+            return str.size() >= suffix.size() && 0 == str.compare(str.size()-suffix.size(), suffix.size(), suffix);
+        }
+
+        inline bool startswith(const std::string& str, const std::string& prefix)
+        {
+            return str.size() >= prefix.size() && 0 == str.compare(0, prefix.size(), prefix);
+        }
+
+        inline void to_upper(std::string& data)
+        {
+            std::for_each(data.begin(), data.end(), [](char & c){
+                c = ::toupper(c);
+            });
+        }
+
+        inline std::string to_upper_copy(const std::string& data)
+        {
+            std::string rtn = data;
+            to_upper(rtn);
+            return rtn;
+        }
+
+        inline void to_lower(std::string& data)
+        {
+            std::for_each(data.begin(), data.end(), [](char & c){
+                c = ::tolower(c);
+            });
+        }
+
+        inline std::string to_lower_copy(const std::string& data)
+        {
+            std::string rtn = data;
+            to_lower(rtn);
+            return rtn;
+        }
+
         inline bool is_final_status(const OrderStatus &status)
         {
             switch (status)
@@ -240,37 +295,36 @@ namespace kungfu
 
         inline bool is_reverse_repurchase(const std::string &instrument_id, const std::string &exchange_id)
         {
-            return (string_equals_n(instrument_id, "204", 3) == 0 && string_equals(exchange_id, EXCHANGE_SSE) == 0) ||
-                   (string_equals_n(instrument_id, "1318", 4) == 0 && string_equals(exchange_id, EXCHANGE_SZE) == 0);
+            return (string_equals_n(instrument_id, "204", 3) && string_equals(exchange_id, EXCHANGE_SSE)) || (string_equals_n(instrument_id, "1318", 4) && string_equals(exchange_id, EXCHANGE_SZE));
         }
 
         inline double get_reverse_repurchase_commission_rate(const std::string &instrument_id)
         {
-            if (string_equals(instrument_id, "204001") == 0 || string_equals(instrument_id, "131810") == 0)
+            if (string_equals(instrument_id, "204001") || string_equals(instrument_id, "131810"))
             {
                 return 0.00001;
-            } else if (string_equals(instrument_id, "204002") == 0 || string_equals(instrument_id, "131811") == 0)
+            } else if (string_equals(instrument_id, "204002") || string_equals(instrument_id, "131811"))
             {
                 return 0.00002;
-            } else if (string_equals(instrument_id, "204003") == 0 || string_equals(instrument_id, "131800") == 0)
+            } else if (string_equals(instrument_id, "204003") || string_equals(instrument_id, "131800"))
             {
                 return 0.00003;
-            } else if (string_equals(instrument_id, "204004") == 0 || string_equals(instrument_id, "131809") == 0)
+            } else if (string_equals(instrument_id, "204004") || string_equals(instrument_id, "131809") )
             {
                 return 0.00004;
-            } else if (string_equals(instrument_id, "204007") == 0 || string_equals(instrument_id, "131801") == 0)
+            } else if (string_equals(instrument_id, "204007") || string_equals(instrument_id, "131801"))
             {
                 return 0.00005;
-            } else if (string_equals(instrument_id, "204014") == 0 || string_equals(instrument_id, "131802") == 0)
+            } else if (string_equals(instrument_id, "204014") || string_equals(instrument_id, "131802"))
             {
                 return 0.00010;
-            } else if (string_equals(instrument_id, "204029") == 0 || string_equals(instrument_id, "131803") == 0)
+            } else if (string_equals(instrument_id, "204029") || string_equals(instrument_id, "131803"))
             {
                 return 0.00020;
-            } else if (string_equals(instrument_id, "204091") == 0 || string_equals(instrument_id, "131805") == 0)
+            } else if (string_equals(instrument_id, "204091") || string_equals(instrument_id, "131805"))
             {
                 return 0.00030;
-            } else if (string_equals(instrument_id, "204182") == 0 || string_equals(instrument_id, "131806") == 0)
+            } else if (string_equals(instrument_id, "204182") || string_equals(instrument_id, "131806"))
             {
                 return 0.00030;
             } else
@@ -281,31 +335,31 @@ namespace kungfu
 
         inline int get_reverse_repurchase_expire_days(const std::string &instrument_id)
         {
-            if (string_equals(instrument_id, "204001") == 0 || string_equals(instrument_id, "131810") == 0)
+            if (string_equals(instrument_id, "204001")|| string_equals(instrument_id, "131810"))
             {
                 return 1;
-            } else if (string_equals(instrument_id, "204002") == 0 || string_equals(instrument_id, "131811") == 0)
+            } else if (string_equals(instrument_id, "204002") || string_equals(instrument_id, "131811"))
             {
                 return 2;
-            } else if (string_equals(instrument_id, "204003") == 0 || string_equals(instrument_id, "131800") == 0)
+            } else if (string_equals(instrument_id, "204003") || string_equals(instrument_id, "131800"))
             {
                 return 3;
-            } else if (string_equals(instrument_id, "204004") == 0 || string_equals(instrument_id, "131809") == 0)
+            } else if (string_equals(instrument_id, "204004") || string_equals(instrument_id, "131809"))
             {
                 return 4;
-            } else if (string_equals(instrument_id, "204007") == 0 || string_equals(instrument_id, "131801") == 0)
+            } else if (string_equals(instrument_id, "204007") || string_equals(instrument_id, "131801"))
             {
                 return 7;
-            } else if (string_equals(instrument_id, "204014") == 0 || string_equals(instrument_id, "131802") == 0)
+            } else if (string_equals(instrument_id, "204014") || string_equals(instrument_id, "131802"))
             {
                 return 14;
-            } else if (string_equals(instrument_id, "204029") == 0 || string_equals(instrument_id, "131803") == 0)
+            } else if (string_equals(instrument_id, "204029") || string_equals(instrument_id, "131803"))
             {
                 return 28;
-            } else if (string_equals(instrument_id, "204091") == 0 || string_equals(instrument_id, "131805") == 0)
+            } else if (string_equals(instrument_id, "204091") || string_equals(instrument_id, "131805"))
             {
                 return 91;
-            } else if (string_equals(instrument_id, "204182") == 0 || string_equals(instrument_id, "131806") == 0)
+            } else if (string_equals(instrument_id, "204182") || string_equals(instrument_id, "131806"))
             {
                 return 182;
             } else
@@ -316,20 +370,87 @@ namespace kungfu
 
         inline InstrumentType get_instrument_type(const std::string &instrument_id, const std::string &exchange_id)
         {
-            if (string_equals(exchange_id, EXCHANGE_SSE) || string_equals(exchange_id, EXCHANGE_SZE))
+            if (string_equals(exchange_id, EXCHANGE_SSE))
             {
-                if (is_reverse_repurchase(instrument_id, exchange_id))
+                if(startswith(instrument_id, "00"))
+                {
+                    return InstrumentType::Index;
+                }
+                else if(startswith(instrument_id, "0"))
                 {
                     return InstrumentType::Bond;
                 }
-                else
+                else if(startswith(instrument_id, "1"))
+                {
+                    return InstrumentType::Bond;
+                }
+                else if(startswith(instrument_id, "2"))
+                {
+                    return InstrumentType::Repo;
+                }
+                else if (startswith(instrument_id, "5"))
+                {
+                    return InstrumentType::Fund;
+                }
+                else if(startswith(instrument_id, "6"))
                 {
                     return InstrumentType::Stock;
                 }
             }
-            else
+            else if(string_equals(exchange_id, EXCHANGE_SZE))
+            {
+                if (startswith(instrument_id, "0"))
+                {
+                    return InstrumentType::Stock;
+                }
+                else if(startswith(instrument_id, "15") || startswith(instrument_id, "16") || startswith(instrument_id, "18"))
+                {
+                    return InstrumentType::Fund;
+                }
+                else if(startswith(instrument_id, "13"))
+                {
+                    return InstrumentType::Repo;
+                }
+                else if(startswith(instrument_id, "1"))
+                {
+                    return InstrumentType::Bond;
+                }
+                else if(startswith(instrument_id, "30"))
+                {
+                    return InstrumentType::Stock;
+                }
+            }
+            else if(string_equals(exchange_id, EXCHANGE_DCE) || string_equals(exchange_id, EXCHANGE_SHFE) || string_equals(exchange_id, EXCHANGE_CFFEX) || string_equals(exchange_id, EXCHANGE_CZCE) || string_equals(exchange_id, EXCHANGE_INE))
             {
                 return InstrumentType::Future;
+            }
+            return InstrumentType::Unknown;
+        }
+
+        inline std::string str_from_instrument_type(InstrumentType type)
+        {
+            switch(type)
+            {
+                case InstrumentType::Unknown:
+                    return "Unknown";
+                case InstrumentType::Stock:
+                    return "Stock";
+                case InstrumentType::Future:
+                    return "Future";
+                case InstrumentType::Bond:
+                    return "Bond";
+                case InstrumentType::StockOption:
+                    return "StockOption";
+                case InstrumentType::Fund:
+                    return "Fund";
+                case InstrumentType::TechStock:
+                    return "TechStock";
+                case InstrumentType::Index:
+                    return "Index";
+                case InstrumentType::Repo:
+                    return "Repo";
+                default:
+                    return "Unknown";
             }
         }
 
@@ -359,31 +480,6 @@ namespace kungfu
             }
         }
 
-        inline std::string get_exchange_id_from_future_instrument_id(const char *instrument_id)
-        {
-            std::string product = get_instrument_product(instrument_id);
-            std::transform(product.begin(), product.end(), product.begin(), ::tolower);
-            if (product == "c" || product == "cs" || product == "a" || product == "b" || product == "m" || product == "y" ||
-                product == "p" || product == "fb" || product == "bb" || product == "jd" || product == "l" || product == "v" ||
-                product == "pp" || product == "j" || product == "jm" || product == "i" || product == "eg" ||
-                product.substr(0, 2) == "sp" || product.substr(0, 3) == "spc")
-            {
-                return EXCHANGE_DCE;
-            } else if (product == "sr" || product == "cf" || product == "pm" || product == "wh" || product == "ri" || product == "lr" ||
-                       product == "jr" || product == "rm" || product == "rs" || product == "rs" || product == "rm" || product == "oi" ||
-                       product == "cy" || product == "ta" || product == "ma" || product == "fg" || product == "sf" || product == "sm" ||
-                       product.substr(0, 3) == "spd" || product.substr(0, 3) == "ips")
-            {
-                int pos = 0;
-                while ((instrument_id[pos] > 'a' && instrument_id[pos] < 'z') || (instrument_id[pos] > 'A' && instrument_id[pos] < 'Z'))
-                {
-                    pos++;
-                }
-                return std::string(instrument_id, pos);
-            }
-            throw wingchun_error(fmt::format("unknown instrument [{}]", instrument_id));
-        }
-
         inline bool is_open(InstrumentType instrument_type, Side side, Offset offset)
         {
             if (instrument_type == InstrumentType::Stock || instrument_type == InstrumentType::Bond)
@@ -400,24 +496,27 @@ namespace kungfu
 
         inline std::string get_exchange_id_from_future_instrument_id(const std::string &instrument_id)
         {
-            std::string product = std::string(instrument_id).substr(0, instrument_id.length() - 4);
+            std::size_t found = instrument_id.find_first_of("0123456789");
+            std::string product = instrument_id.substr(0, found);
             std::transform(product.begin(), product.end(), product.begin(), ::tolower);
             if (product == "c" || product == "cs" || product == "a" || product == "b" || product == "m" || product == "y" ||
-                product == "p" || product == "fb" || product == "bb" || product == "jd" || product == "l" || product == "v" ||
-                product == "pp" || product == "j" || product == "jm" || product == "i" || product == "eg")
+                product == "p" || product == "fb" || product == "bb" || product == "jd" || product == "rr" || product == "l" ||
+                product == "v" || product == "pp" || product == "j" || product == "jm" || product == "i" || product == "eg" ||
+                product == "eb")
             {
                 return EXCHANGE_DCE;
-            } else if (product == "sr" || product == "cf" || product == "pm" || product == "wh" || product == "ri" || product == "lr" ||
-                       product == "jr" || product == "rm" || product == "rs" || product == "rs" || product == "rm" || product == "oi" ||
-                       product == "cy" || product == "ta" || product == "ma" || product == "fg" || product == "sf" || product == "sm")
+            } else if (product == "wh" || product == "pm" || product == "cf" || product == "sr" || product == "oi" || product == "ri" ||
+                       product == "rs" || product == "rm" || product == "jr" || product == "lr" || product == "cy" || product == "ap" ||
+                       product == "cj" || product == "ta" || product == "ma" || product == "zc" || product == "sf" || product == "sm" ||
+                       product == "ur")
             {
                 return EXCHANGE_CZCE;
             } else if (product == "cu" || product == "al" || product == "zn" || product == "pb" || product == "ni" || product == "sn" ||
-                       product == "au" || product == "ag" || product == "rb" || product == "wr" || product == "hc" || product == "fu" ||
-                       product == "bu" || product == "ru" || product == "sp")
+                       product == "au" || product == "ag" || product == "rb" || product == "wr" || product == "hc" || product == "ss" ||
+                       product == "fu" || product == "bu" || product == "ru" || product == "nr" || product == "sp")
             {
                 return EXCHANGE_SHFE;
-            } else if (product == "if" || product == "ic" || product == "ih" || product == "tf" || product == "tf" || product == "t")
+            } else if (product == "if" || product == "ic" || product == "ih" || product == "ts" || product == "tf" || product == "t")
             {
                 return EXCHANGE_CFFEX;
             } else if (product == "sc")
@@ -457,6 +556,11 @@ namespace kungfu
                 default:
                     return EXCHANGE_SZE;
             }
+        }
+
+        inline uint32_t get_symbol_id(const std::string &symbol, const std::string &exchange)
+        {
+            return yijinjing::util::hash_str_32(symbol) ^ yijinjing::util::hash_str_32(exchange);
         }
     }
 }

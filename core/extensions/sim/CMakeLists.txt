@@ -1,0 +1,8 @@
+PROJECT(kfext_sim)
+
+SET(KF_EXTENSION_BUILD_DIR ${KF_EXTENSIONS_BUILD_DIR}/sim)
+CONFIGURE_FILE(__init__.py "${KF_EXTENSION_BUILD_DIR}/__init__.py")
+CONFIGURE_FILE(package.json "${KF_EXTENSION_BUILD_DIR}/package.json")
+CONFIGURE_FILE(marketdata_sim.py "${KF_EXTENSION_BUILD_DIR}/marketdata_sim.py")
+CONFIGURE_FILE(trader_sim.py "${KF_EXTENSION_BUILD_DIR}/trader_sim.py")
+FILE(COPY mdmaker DESTINATION ${KF_EXTENSION_BUILD_DIR})

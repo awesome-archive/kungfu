@@ -326,6 +326,12 @@ p.el-select-dropdown__empty{
         line-height: 25px;
         font-family: Consolas, Monaco, monospace,"Microsoft YaHei",sans-serif;
     }
+    .blink-cell .cell{
+        padding: 0;
+        .tr-table-cell {
+            padding: 0 10px;
+        }
+    }
     th{
         background: $tab_header; //头部的颜色
         color: $font;
@@ -376,12 +382,15 @@ p.el-select-dropdown__empty{
             margin-bottom: 0px;
         }
         .el-collapse-item__header{
+            height: 40px;
+            line-height: 40px;
             font-size: 14px;
             color: $font_5;
             padding-left: 10px;
+            background: $tab_header;
         }
         .el-collapse-item__wrap{
-            border-top: 1px solid $bg_light;
+            // border-top: 1px solid $bg_light;
             .el-collapse-item__content{
                 font-size: 14px;
                 padding-bottom: 0px;

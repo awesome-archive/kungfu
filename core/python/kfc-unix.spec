@@ -1,3 +1,7 @@
+import os
+import tushare
+import plotly
+
 # hack from https://github.com/pyinstaller/pyinstaller/issues/4064
 # to get pandas working
 import distutils
@@ -21,13 +25,21 @@ a = Analysis(['kungfu/__main__.py'],
         ('../deps/rxcpp-4.1.0/include', 'include'),
         ('../deps/hffix-b67d404f/include', 'include'),
         ('../deps/SQLiteCpp-2.3.0/include', 'include'),
-        ('../deps/pybind11-2.2.4', 'pybind11')
+        ('../deps/pybind11-2.2.4', 'pybind11'),
+        (os.path.join(tushare.__path__[0], 'VERSION.txt'), 'tushare'),
+        (os.path.join(plotly.__path__[0], 'package_data'), 'plotly/package_data')
      ],
      hiddenimports=[
           'numpy',
-          'pandas'
+          'pandas',
+          'tushare',
+          'plotly',
+          'plotly.graph_objects',
+          "recordclass",
+          "sortedcontainers",
+          "dotted_dict"
           ],
-     hookspath=None,
+     hookspath=["python/hooks"],
      runtime_hooks=None,
      excludes=['extensions'],
      cipher=block_cipher)

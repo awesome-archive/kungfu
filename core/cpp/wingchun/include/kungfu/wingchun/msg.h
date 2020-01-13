@@ -11,8 +11,7 @@
 #include <vector>
 #include <nlohmann/json.hpp>
 #include <kungfu/wingchun/common.h>
-
-#define FORMAT_DOUBLE(x) rounded(x, 4)
+#include <kungfu/yijinjing/journal/journal.h>
 
 namespace kungfu
 {
@@ -24,8 +23,6 @@ namespace kungfu
             {
                 enum MsgType
                 {
-                    Error = 0,
-
                     Quote = 101,
                     Entrust = 102,
                     Transaction = 103,
@@ -37,26 +34,35 @@ namespace kungfu
                     Order = 203,
                     Trade = 204,
                     Position = 205,
-                    AssetInfo = 206,
-                    AssetInfoSnapshot = 207,
+                    Asset = 206,
+                    AssetSnapshot = 207,
                     PositionDetail = 208,
+                    Instrument = 209,
+                    AlgoOrderInput = 210,
+                    AlgoOrderReport = 211,
+                    AlgoOrderModify = 212,
 
                     Subscribe = 302,
-                    GatewayState = 401,
+                    NewOrderSingle = 353,
+                    CancelOrder = 354,
+                    CancelAllOrder = 355,
+                    InstrumentRequest = 356,
 
+                    BrokerStateRefresh = 400,
+                    BrokerState = 401,
+                    QryAsset = 402,
+                    PublishAllAssetInfo = 403,
+                    RemoveStrategy = 404,
+                    
                     PositionEnd = 800,
                     PositionDetailEnd = 801,
-
-                    PassiveCtrl = 10099,
-                    UIActionNewOrderSingle = 20000,
-                    UIActionCancelOrder = 20001,
-                    UIActionCancelAllOrder = 20002
+                    InstrumentEnd = 802,
                 };
             }
 
             namespace data
             {
-                enum class GatewayState : int
+                enum class BrokerState : int
                 {
                     Unknown = 0,
                     Idle = 1,
@@ -67,6 +73,9 @@ namespace kungfu
                     Ready = 100
                 };
 
+#ifdef _WIN32
+    #pragma pack(push, 1)
+#endif
                 struct Instrument
                 {
                     char instrument_id[INSTRUMENT_ID_LEN];     //合约ID
@@ -93,27 +102,53 @@ namespace kungfu
                     const std::string get_instrument_id() const
                     { return std::string(instrument_id); }
 
+                    void set_instrument_id(const std::string& instrument_id)
+                    {strncpy(this->instrument_id, instrument_id.c_str(), INSTRUMENT_ID_LEN); }
+
                     const std::string get_exchange_id() const
                     { return std::string(exchange_id); }
+
+                    void set_exchange_id(const std::string& exchange_id)
+                    {strncpy(this->exchange_id, exchange_id.c_str(), EXCHANGE_ID_LEN); }
 
                     const std::string get_product_id() const
                     { return std::string(product_id); }
 
+                    void set_product_id(const std::string& product_id)
+                    {strncpy(this->product_id, product_id.c_str(), PRODUCT_ID_LEN);}
+
                     const std::string get_open_date() const
                     { return std::string(open_date); }
+
+                    void set_open_date(const std::string& open_date)
+                    {strncpy(this->open_date, open_date.c_str(), DATE_LEN);}
 
                     const std::string get_create_date() const
                     { return std::string(create_date); }
 
+                    void set_create_date(const std::string& create_date)
+                    {strncpy(this->create_date, create_date.c_str(), DATE_LEN);}
+
                     const std::string get_expire_date() const
                     { return std::string(expire_date); }
 
+                    void set_expire_date(const std::string& expire_date)
+                    {strncpy(this->expire_date, expire_date.c_str(), DATE_LEN);}
+
+                    bool operator ==(const Instrument & obj) const
+                    {
+                        return strcmp(this->instrument_id, obj.instrument_id) == 0 && strcmp(this->exchange_id, obj.exchange_id) == 0;
+                    }
+
+                    bool operator <(const Instrument & obj) const
+                    {
+                        return get_symbol_id(this->get_instrument_id(), this->get_exchange_id()) < get_symbol_id(obj.get_instrument_id(), obj.get_exchange_id());
+                    }
+
 #ifndef _WIN32
                 } __attribute__((packed));
-
 #else
                 };
-#pragma pack(pop)
 #endif
 
                 inline void to_json(nlohmann::json &j, const Instrument &instrument)
@@ -132,9 +167,6 @@ namespace kungfu
                     j["long_margin_ratio"] = instrument.long_margin_ratio;
                     j["short_margin_ratio"] = instrument.short_margin_ratio;
                 }
-
-                struct FutureInstrument : public Instrument
-                {};
 
                 //行情
                 struct Quote
@@ -177,112 +209,121 @@ namespace kungfu
                     std::string get_source_id() const
                     { return std::string(source_id); }
 
-                    void set_source_id(const std::string & source_id_)
-                    {strncpy(source_id, source_id_.c_str(), SOURCE_ID_LEN);}
+                    void set_source_id(const std::string& source_id)
+                    {strncpy(this->source_id, source_id.c_str(), SOURCE_ID_LEN);}
 
                     std::string get_trading_day() const
                     { return std::string(trading_day); }
 
-                    void set_trading_day(const std::string & trading_day_)
-                    {strncpy(trading_day, trading_day_.c_str(), DATE_LEN);}
+                    void set_trading_day(const std::string& trading_day)
+                    {strncpy(this->trading_day, trading_day.c_str(), DATE_LEN);}
 
                     std::string get_instrument_id() const
                     { return std::string(instrument_id); }
 
-                    void set_instrument_id(const std::string & instrument_id_)
-                    { strncpy(instrument_id, instrument_id_.c_str(), INSTRUMENT_ID_LEN);}
+                    void set_instrument_id(const std::string& instrument_id)
+                    { strncpy(this->instrument_id, instrument_id.c_str(), INSTRUMENT_ID_LEN);}
 
                     std::string get_exchange_id() const
                     { return std::string(exchange_id); }
 
-                    void set_exchange_id(const std::string & exchange_id_)
-                    {strncpy(exchange_id, exchange_id_.c_str(), EXCHANGE_ID_LEN);}
+                    void set_exchange_id(const std::string& exchange_id)
+                    {strncpy(this->exchange_id, exchange_id.c_str(), EXCHANGE_ID_LEN);}
 
                     std::vector<double> get_bid_price() const
                     { return std::vector<double>(bid_price, bid_price + 10); }
 
-                    void set_bid_price(std::vector<double> & bid_price_)
-                    {
-                        int len = bid_price_.size();
-                        len = len > 10 ? 10 : len;
-                        if(len > 0)
-                        { memcpy(bid_price, &bid_price_[0], len*sizeof(double)); }
-                    }
+                    void set_bid_price(const std::vector<double> &bp)
+                    { memcpy(bid_price, (const void*) bp.data(), sizeof(double) * std::min(10, int(bp.size())));}
 
                     std::vector<double> get_ask_price() const
                     { return std::vector<double>(ask_price, ask_price + 10); }
 
-                    void set_ask_price(std::vector<double> & ask_price_)
-                    {
-                        int len = ask_price_.size();
-                        len = len > 10 ? 10 : len;
-                        if(len > 0)
-                        { memcpy(ask_price, &ask_price_[0], len*sizeof(double)); }
-                    }
+                    void set_ask_price(const std::vector<double> &ap)
+                    { memcpy(ask_price, (const void*) ap.data(), sizeof(double) * std::min(10, int(ap.size())));}
 
                     std::vector<int64_t> get_bid_volume() const
                     { return std::vector<int64_t>(bid_volume, bid_volume + 10); }
 
-                    void set_bid_volume(std::vector<int64_t> & bid_volume_)
-                    {
-                        int len = bid_volume_.size();
-                        len = len > 10 ? 10 : len;
-                        if(len > 0)
-                        { memcpy(bid_volume, &bid_volume_[0], len*sizeof(int64_t)); }
-                    }
+                    void set_bid_volume(const std::vector<int64_t> &bv)
+                    { memcpy(bid_volume, (const void*) bv.data(), sizeof(int64_t) * std::min(10, int(bv.size())));}
 
                     std::vector<int64_t> get_ask_volume() const
                     { return std::vector<int64_t>(ask_volume, ask_volume + 10); }
 
-                    void set_ask_volume(std::vector<int64_t> & ask_volume_)
-                    {
-                        int len = ask_volume_.size();
-                        len = len > 10 ? 10 : len;
-                        if(len > 0)
-                        { memcpy(ask_volume, &ask_volume_[0], len*sizeof(int64_t)); }
-                    }
+                    void set_ask_volume(const std::vector<int64_t> &av)
+                    { memcpy(ask_volume, (const void*) av.data(), sizeof(int64_t) * std::min(10, int(av.size())));}
 
 #ifndef _WIN32
                 } __attribute__((packed));
-
 #else
                 };
-#pragma pack(pop)
 #endif
 
                 inline void to_json(nlohmann::json &j, const Quote &quote)
                 {
-                    j["trading_day"] = std::string(quote.trading_day);
+                    j["trading_day"] = quote.get_trading_day();
                     j["data_time"] = quote.data_time;
-                    j["instrument_id"] = std::string(quote.instrument_id);
-                    j["exchange_id"] = std::string(quote.exchange_id);
+                    j["instrument_id"] = quote.get_instrument_id();
+                    j["exchange_id"] = quote.get_exchange_id();
                     j["instrument_type"] = quote.instrument_type;
 
-                    j["pre_close_price"] = FORMAT_DOUBLE(quote.pre_close_price);
-                    j["pre_settlement_price"] = FORMAT_DOUBLE(quote.pre_settlement_price);
+                    j["pre_close_price"] = quote.pre_close_price;
+                    j["pre_settlement_price"] = quote.pre_settlement_price;
 
-                    j["last_price"] = FORMAT_DOUBLE(quote.last_price);
+                    j["last_price"] = quote.last_price;
                     j["volume"] = quote.volume;
-                    j["turnover"] = FORMAT_DOUBLE(quote.turnover);
+                    j["turnover"] = quote.turnover;
 
-                    j["pre_open_interest"] = FORMAT_DOUBLE(quote.pre_open_interest);
-                    j["open_interest"] = FORMAT_DOUBLE(quote.open_interest);
+                    j["pre_open_interest"] = quote.pre_open_interest;
+                    j["open_interest"] = quote.open_interest;
 
-                    j["open_price"] = FORMAT_DOUBLE(quote.open_price);
-                    j["high_price"] = FORMAT_DOUBLE(quote.high_price);
-                    j["low_price"] = FORMAT_DOUBLE(quote.low_price);
+                    j["open_price"] = quote.open_price;
+                    j["high_price"] = quote.high_price;
+                    j["low_price"] = quote.low_price;
 
-                    j["upper_limit_price"] = FORMAT_DOUBLE(quote.upper_limit_price);
-                    j["lower_limit_price"] = FORMAT_DOUBLE(quote.lower_limit_price);
+                    j["upper_limit_price"] = quote.upper_limit_price;
+                    j["lower_limit_price"] = quote.lower_limit_price;
 
-                    j["close_price"] = FORMAT_DOUBLE(quote.close_price);
-                    j["settlement_price"] = FORMAT_DOUBLE(quote.settlement_price);
+                    j["close_price"] = quote.close_price;
+                    j["settlement_price"] = quote.settlement_price;
 
-                    j["bid_price"] = std::vector<double>(quote.bid_price, std::end(quote.bid_price));
-                    j["ask_price"] = std::vector<double>(quote.ask_price, std::end(quote.ask_price));
+                    j["bid_price"] = quote.get_bid_price();
+                    j["ask_price"] = quote.get_ask_price();
 
-                    j["bid_volume"] = std::vector<int64_t>(quote.bid_volume, std::end(quote.bid_volume));
-                    j["ask_volume"] = std::vector<int64_t>(quote.ask_volume, std::end(quote.ask_volume));
+                    j["bid_volume"] = quote.get_bid_volume();
+                    j["ask_volume"] = quote.get_ask_volume();
+                }
+
+                inline void from_json(const nlohmann::json &j, Quote &quote)
+                {
+                    quote.set_trading_day(j["trading_day"].get<std::string>());
+                    quote.data_time = j["data_time"];
+                    quote.set_instrument_id(j["instrument_id"].get<std::string>());
+                    quote.set_exchange_id(j["exchange_id"].get<std::string>());
+                    quote.instrument_type = j["instrument_type"];
+                    quote.pre_close_price = j["pre_close_price"];
+                    quote.pre_settlement_price = j["pre_settlement_price"];
+                    quote.last_price = j["last_price"];
+                    quote.volume = j["volume"];
+                    quote.turnover = j["turnover"];
+                    quote.pre_open_interest = j["pre_open_interest"];
+                    quote.open_interest = j["open_interest"];
+
+                    quote.open_price = j["open_price"];
+                    quote.high_price = j["high_price"];
+                    quote.low_price = j["low_price"];
+
+                    quote.upper_limit_price = j["upper_limit_price"];
+                    quote.lower_limit_price = j["lower_limit_price"];
+
+                    quote.close_price = j["close_price"];
+                    quote.settlement_price = j["settlement_price"];
+
+                    quote.set_bid_price(j["bid_price"].get<std::vector<double>>());
+                    quote.set_ask_price(j["ask_price"].get<std::vector<double>>());
+                    quote.set_bid_volume(j["bid_volume"].get<std::vector<int64_t>>());
+                    quote.set_ask_volume(j["ask_volume"].get<std::vector<int64_t>>());
                 }
 
                 //逐笔委托
@@ -306,24 +347,33 @@ namespace kungfu
                     int64_t main_seq;                           //主序号
                     int64_t seq;                                //子序号
 
-                    std::string get_source_id()
+                    const std::string get_source_id() const
                     { return std::string(source_id); }
 
-                    std::string get_trading_day()
+                    void set_source_id(const std::string& source_id)
+                    {strncpy(this->source_id, source_id.c_str(), SOURCE_ID_LEN);}
+
+                    const std::string get_trading_day() const
                     { return std::string(trading_day); }
 
-                    std::string get_instrument_id()
+                    void set_trading_day(const std::string& trading_day)
+                    {strncpy(this->trading_day, trading_day.c_str(), DATE_LEN);}
+
+                    const std::string get_instrument_id() const
                     { return std::string(instrument_id); }
 
-                    std::string get_exchange_id()
+                    void set_instrument_id(const std::string& instrument_id)
+                    { strncpy(this->instrument_id, instrument_id.c_str(), INSTRUMENT_ID_LEN);}
+
+                    const std::string get_exchange_id() const
                     { return std::string(exchange_id); }
 
+                    void set_exchange_id(const std::string& exchange_id)
+                    {strncpy(this->exchange_id, exchange_id.c_str(), EXCHANGE_ID_LEN);}
 #ifndef _WIN32
                 } __attribute__((packed));
-
 #else
                 };
-#pragma pack(pop)
 #endif
 
                 inline void to_json(nlohmann::json &j, const Entrust &entrust)
@@ -334,7 +384,7 @@ namespace kungfu
                     j["instrument_id"] = std::string(entrust.instrument_id);
                     j["exchange_id"] = std::string(entrust.exchange_id);
                     j["instrument_type"] = entrust.instrument_type;
-                    j["price"] = FORMAT_DOUBLE(entrust.price);
+                    j["price"] = entrust.price;
                     j["volume"] = entrust.volume;
                     j["side"] = entrust.side;
                     j["price_type"] = entrust.price_type;
@@ -367,24 +417,34 @@ namespace kungfu
                     int64_t main_seq;                               //主序号
                     int64_t seq;                                    //子序号
 
-                    std::string get_source_id()
+                    const std::string get_source_id() const
                     { return std::string(source_id); }
 
-                    std::string get_trading_day()
+                    void set_source_id(const std::string& source_id)
+                    {strncpy(this->source_id, source_id.c_str(), SOURCE_ID_LEN);}
+
+                    const std::string get_trading_day() const
                     { return std::string(trading_day); }
 
-                    std::string get_instrument_id()
+                    void set_trading_day(const std::string& trading_day)
+                    {strncpy(this->trading_day, trading_day.c_str(), DATE_LEN);}
+
+                    const std::string get_instrument_id() const
                     { return std::string(instrument_id); }
 
-                    std::string get_exchange_id()
+                    void set_instrument_id(const std::string& instrument_id)
+                    { strncpy(this->instrument_id, instrument_id.c_str(), INSTRUMENT_ID_LEN);}
+
+                    const std::string get_exchange_id() const
                     { return std::string(exchange_id); }
+
+                    void set_exchange_id(const std::string& exchange_id)
+                    {strncpy(this->exchange_id, exchange_id.c_str(), EXCHANGE_ID_LEN);}
 
 #ifndef _WIN32
                 } __attribute__((packed));
-
 #else
                 };
-#pragma pack(pop)
 #endif
 
                 inline void to_json(nlohmann::json &j, const Transaction &transaction)
@@ -395,7 +455,7 @@ namespace kungfu
                     j["instrument_id"] = std::string(transaction.instrument_id);
                     j["exchange_id"] = std::string(transaction.exchange_id);
                     j["instrument_type"] = transaction.instrument_type;
-                    j["price"] = FORMAT_DOUBLE(transaction.price);
+                    j["price"] = transaction.price;
                     j["volume"] = transaction.volume;
                     j["bid_no"] = transaction.bid_no;
                     j["ask_no"] = transaction.ask_no;
@@ -407,20 +467,45 @@ namespace kungfu
 
                 struct Bar
                 {
-                    char trading_day[DATE_LEN];            //交易日 
+                    char trading_day[DATE_LEN];            //交易日
                     char instrument_id[INSTRUMENT_ID_LEN]; //合约代码
-                    double pre_close_price;                //昨收价
+                    char exchange_id[EXCHANGE_ID_LEN];     //交易所代码
+
                     int64_t start_time;                    //开始时间
                     int64_t end_time;                      //结束时间
+
                     double open;                           //开
                     double close;                          //收
                     double low;                            //低
                     double high;                           //高
-                    int volume;                            //区间交易量
-                    int start_volume;                       //初始总交易量
-                    int count;                             //区间有效tick数
-                    int64_t next_time;                     //下次开始时间
+
+                    int64_t volume;                        //区间交易量
+                    int64_t start_volume;                  //初始总交易量
+
+                    int32_t tick_count;                    //区间有效tick数
+
+                    const std::string get_trading_day() const
+                    { return std::string(trading_day); }
+
+                    void set_trading_day(const std::string& trading_day)
+                    { strncpy(this->trading_day, trading_day.c_str(), DATE_LEN); }
+
+                    const std::string get_instrument_id() const
+                    { return std::string(instrument_id); }
+
+                    void set_instrument_id(const std::string& instrument_id)
+                    { strncpy(this->instrument_id, instrument_id.c_str(), INSTRUMENT_ID_LEN);}
+
+                    const std::string get_exchange_id() const
+                    { return std::string(exchange_id); }
+
+                    void set_exchange_id(const std::string& exchange_id)
+                    {strncpy(this->exchange_id, exchange_id.c_str(), EXCHANGE_ID_LEN);}
+#ifndef _WIN32
+                } __attribute__((packed));
+#else
                 };
+#endif
 
 
 
@@ -428,17 +513,16 @@ namespace kungfu
                 {
                     j["trading_day"] = std::string(bar.trading_day);
                     j["instrument_id"] = std::string(bar.instrument_id);
-                    j["pre_close_price"] = FORMAT_DOUBLE(bar.pre_close_price);
+                    j["exchange_id"] = std::string(bar.exchange_id);
                     j["start_time"] = bar.start_time;
                     j["end_time"] = bar.end_time;
-                    j["open"] = FORMAT_DOUBLE(bar.open);
-                    j["close"] = FORMAT_DOUBLE(bar.close);
-                    j["low"] = FORMAT_DOUBLE(bar.low);
-                    j["high"] = FORMAT_DOUBLE(bar.high);
+                    j["open"] = bar.open;
+                    j["close"] = bar.close;
+                    j["low"] = bar.low;
+                    j["high"] = bar.high;
                     j["volume"] = bar.volume;
                     j["start_volume"] = bar.start_volume;
-                    j["count"] = bar.count;
-                    j["next_time"] = bar.next_time;
+                    j["tick_count"] = bar.tick_count;
                 }
 
                 //合约手续费率
@@ -477,7 +561,6 @@ namespace kungfu
 
 #else
                 };
-#pragma pack(pop)
 #endif
 
                 //订单输入
@@ -487,6 +570,8 @@ namespace kungfu
 
                     char instrument_id[INSTRUMENT_ID_LEN];   //合约代码
                     char exchange_id[EXCHANGE_ID_LEN];       //交易所代码
+
+                    char source_id[SOURCE_ID_LEN];           //柜台ID
                     char account_id[ACCOUNT_ID_LEN];         //账号ID
 
                     InstrumentType instrument_type;          //合约类型
@@ -498,41 +583,40 @@ namespace kungfu
 
                     Side side;                               //买卖方向
                     Offset offset;                           //开平方向
+                    HedgeFlag hedge_flag;                    //投机套保标识
                     PriceType price_type;                    //价格类型
                     VolumeCondition volume_condition;        //成交量类型
                     TimeCondition time_condition;            //成交时间类型
 
                     uint64_t parent_id;                      //母订单ID
 
-                    std::string get_instrument_id()
+                    const std::string get_instrument_id() const
                     { return std::string(instrument_id); }
 
-                    void set_instrument_id(const std::string &inst)
-                    {
-                        strcpy(instrument_id, inst.c_str());
-                    }
+                    void set_instrument_id(const std::string& instrument_id)
+                    { strncpy(this->instrument_id, instrument_id.c_str(), INSTRUMENT_ID_LEN);}
 
-                    std::string get_exchange_id()
+                    const std::string get_exchange_id() const
                     { return std::string(exchange_id); }
 
-                    void set_exchange_id(const std::string &exch)
-                    {
-                        strcpy(exchange_id, exch.c_str());
-                    }
+                    void set_exchange_id(const std::string& exchange_id)
+                    {strncpy(this->exchange_id, exchange_id.c_str(), EXCHANGE_ID_LEN);}
 
-                    std::string get_account_id()
+                    const std::string get_account_id() const
                     { return std::string(account_id); }
 
-                    void set_account_id(const std::string &account)
-                    {
-                        strcpy(account_id, account.c_str());
-                    }
+                    void set_account_id(const std::string &account_id)
+                    { strncpy(this->account_id, account_id.c_str(), ACCOUNT_ID_LEN);}
+
+                    const std::string get_source_id() const
+                    { return std::string(source_id); }
+
+                    void set_source_id(const std::string& source_id)
+                    { strncpy(this->source_id, source_id.c_str(), SOURCE_ID_LEN);}
 #ifndef _WIN32
                 } __attribute__((packed));
-
 #else
                 };
-#pragma pack(pop)
 #endif
 
                 inline void to_json(nlohmann::json &j, const OrderInput &input)
@@ -541,12 +625,14 @@ namespace kungfu
                     j["instrument_id"] = std::string(input.instrument_id);
                     j["exchange_id"] = std::string(input.exchange_id);
                     j["account_id"] = std::string(input.account_id);
+                    j["source_id"] = std::string(input.source_id);
                     j["instrument_type"] = input.instrument_type;
                     j["volume"] = input.volume;
-                    j["limit_price"] = FORMAT_DOUBLE(input.limit_price);
-                    j["frozen_price"] = FORMAT_DOUBLE(input.frozen_price);
+                    j["limit_price"] = input.limit_price;
+                    j["frozen_price"] =  input.frozen_price;
                     j["side"] = input.side;
                     j["offset"] = input.offset;
+                    j["hedge_flag"] = input.hedge_flag;
                     j["price_type"] = input.price_type;
                     j["volume_condition"] = input.volume_condition;
                     j["time_condition"] = input.time_condition;
@@ -559,12 +645,14 @@ namespace kungfu
                     strncpy(input.instrument_id, j["instrument_id"].get<std::string>().c_str(), INSTRUMENT_ID_LEN);
                     strncpy(input.exchange_id, j["exchange_id"].get<std::string>().c_str(), EXCHANGE_ID_LEN);
                     strncpy(input.account_id, j["account_id"].get<std::string>().c_str(), ACCOUNT_ID_LEN);
+                    strncpy(input.source_id, j["source_id"].get<std::string>().c_str(), SOURCE_ID_LEN);
                     input.instrument_type = j["instrument_type"];
                     input.limit_price = j["limit_price"].get<double>();
                     input.frozen_price = j["frozen_price"].get<double>();
                     input.volume = j["volume"].get<int64_t>();
                     input.side = j["side"];
                     input.offset = j["offset"];
+                    input.hedge_flag = j["hedge_flag"];
                     input.price_type = j["price_type"];
                     input.volume_condition = j["volume_condition"];
                     input.time_condition = j["time_condition"];
@@ -585,7 +673,6 @@ namespace kungfu
                 } __attribute__((packed));
 #else
                 };
-#pragma pack(pop)
 #endif
 
                 inline void to_json(nlohmann::json &j, const OrderAction &action)
@@ -593,7 +680,7 @@ namespace kungfu
                     j["order_id"] = action.order_id;
                     j["order_action_id"] = action.order_action_id;
                     j["action_flag"] = action.action_flag;
-                    j["price"] = FORMAT_DOUBLE(action.price);
+                    j["price"] = action.price;
                     j["volume"] = action.volume;
                 }
 
@@ -611,7 +698,6 @@ namespace kungfu
                 {
                     uint64_t parent_id;                      //母订单ID
                     uint64_t order_id;                       //订单ID
-                    uint64_t external_id;
 
                     int64_t insert_time;                     //订单写入时间
                     int64_t update_time;                     //订单更新时间
@@ -620,6 +706,8 @@ namespace kungfu
 
                     char instrument_id[INSTRUMENT_ID_LEN];   //合约ID
                     char exchange_id[EXCHANGE_ID_LEN];       //交易所ID
+
+                    char source_id[SOURCE_ID_LEN];           //柜台ID
                     char account_id[ACCOUNT_ID_LEN];         //账号ID
                     char client_id[CLIENT_ID_LEN];           //Client ID
 
@@ -642,38 +730,62 @@ namespace kungfu
 
                     Side side;                               //买卖方向
                     Offset offset;                           //开平方向
+                    HedgeFlag hedge_flag;                    //投机套保标识
                     PriceType price_type;                    //价格类型
                     VolumeCondition volume_condition;        //成交量类型
                     TimeCondition time_condition;            //成交时间类型
 
-                    std::string get_trading_day()
+                    const std::string get_trading_day() const
                     { return std::string(trading_day); }
 
-                    std::string get_instrument_id()
+                    void set_trading_day(const std::string& trading_day)
+                    { strncpy(this->trading_day, trading_day.c_str(), DATE_LEN);}
+
+                    const std::string get_instrument_id() const
                     { return std::string(instrument_id); }
 
-                    std::string get_exchange_id()
+                    void set_instrument_id(const std::string& instrument_id)
+                    { strncpy(this->instrument_id, instrument_id.c_str(), INSTRUMENT_ID_LEN); }
+
+                    const std::string get_exchange_id() const
                     { return std::string(exchange_id); }
 
-                    std::string get_account_id()
+                    void set_exchange_id(const std::string& exchange_id)
+                    { strncpy(this->exchange_id, exchange_id.c_str(), EXCHANGE_ID_LEN); }
+
+                    const std::string get_account_id() const
                     { return std::string(account_id); }
 
-                    std::string get_client_id()
+                    void set_account_id(const std::string& account_id)
+                    { strncpy(this->account_id, account_id.c_str(), ACCOUNT_ID_LEN); }
+
+                    const std::string get_source_id() const
+                    { return std::string(source_id);}
+
+                    void set_source_id(const std::string& source_id)
+                    { strncpy(this->source_id, source_id.c_str(), SOURCE_ID_LEN); }
+
+                    const std::string get_client_id() const
                     { return std::string(client_id); }
 
-                    std::string get_error_msg()
+                    void set_client_id(const std::string& client_id)
+                    { strncpy(this->client_id, client_id.c_str(), CLIENT_ID_LEN); }
+
+                    const std::string get_error_msg() const
                     { return std::string(error_msg); }
 
+                    void set_error_msg(const std::string& error_msg)
+                    { strncpy(this->error_msg, error_msg.c_str(), ERROR_MSG_LEN); }
 #ifndef _WIN32
                 } __attribute__((packed));
 
 #else
                 };
-#pragma pack(pop)
 #endif
 
                 inline void to_json(nlohmann::json &j, const Order &order)
                 {
+
                     j["order_id"] = std::to_string(order.order_id);
                     j["insert_time"] = order.insert_time;
                     j["update_time"] = order.update_time;
@@ -682,20 +794,21 @@ namespace kungfu
                     j["instrument_id"] = std::string(order.instrument_id);
                     j["exchange_id"] = std::string(order.exchange_id);
 
+                    j["source_id"] = std::string(order.source_id);
                     j["account_id"] = std::string(order.account_id);
                     j["client_id"] = std::string(order.client_id);
 
                     j["instrument_type"] = order.instrument_type;
 
-                    j["limit_price"] = FORMAT_DOUBLE(order.limit_price);
-                    j["frozen_price"] = FORMAT_DOUBLE(order.frozen_price);
+                    j["limit_price"] = order.limit_price;
+                    j["frozen_price"] = order.frozen_price;
 
                     j["volume"] = order.volume;
                     j["volume_traded"] = order.volume_traded;
                     j["volume_left"] = order.volume_left;
 
-                    j["tax"] = FORMAT_DOUBLE(order.tax);
-                    j["commission"] = FORMAT_DOUBLE(order.commission);
+                    j["tax"] = order.tax;
+                    j["commission"] = order.commission;
 
                     j["error_id"] = order.error_id;
                     j["error_msg"] = std::string(order.error_msg);
@@ -706,6 +819,7 @@ namespace kungfu
 
                     j["side"] = order.side;
                     j["offset"] = order.offset;
+                    j["hedge_flag"] = order.hedge_flag;
                     j["price_type"] = order.price_type;
                     j["volume_condition"] = order.volume_condition;
                     j["time_condition"] = order.time_condition;
@@ -717,34 +831,27 @@ namespace kungfu
                     order.order_id = j["order_id"];
                     order.insert_time = j["insert_time"];
                     order.update_time = j["update_time"];
-                    strncpy(order.trading_day, j["trading_day"].get<std::string>().c_str(), DATE_LEN);
-                    strncpy(order.instrument_id, j["instrument_id"].get<std::string>().c_str(), INSTRUMENT_ID_LEN);
-                    strncpy(order.exchange_id, j["exchange_id"].get<std::string>().c_str(), EXCHANGE_ID_LEN);
-
-                    strncpy(order.account_id, j["account_id"].get<std::string>().c_str(), ACCOUNT_ID_LEN);
-                    strncpy(order.client_id, j["client_id"].get<std::string>().c_str(), CLIENT_ID_LEN);
-
+                    order.set_trading_day(j["trading_day"].get<std::string>());
+                    order.set_instrument_id(j["instrument_id"].get<std::string>());
+                    order.set_exchange_id(j["exchange_id"].get<std::string>());
+                    order.set_source_id(j["source_id"].get<std::string>());
+                    order.set_account_id(j["account_id"].get<std::string>());
+                    order.set_client_id(j["client_id"].get<std::string>());
                     order.instrument_type = j["instrument_type"];
-
                     order.limit_price = j["limit_price"].get<double>();
                     order.frozen_price = j["frozen_price"].get<double>();
-
                     order.volume = j["volume"];
                     order.volume_traded = j["volume_traded"];
                     order.volume_left = j["volume_left"];
-
                     order.tax = j["tax"].get<double>();
                     order.commission = j["commission"].get<double>();
-
                     order.error_id = j["error_id"];
-                    strncpy(order.error_msg, j["error_msg"].get<std::string>().c_str(), ERROR_MSG_LEN);
-
+                    order.set_error_msg(j["error_msg"].get<std::string>());
                     order.status = j["status"];
-
                     order.parent_id = j["parent_id"];
-
                     order.side = j["side"];
                     order.offset = j["offset"];
+                    order.hedge_flag = j["hedge_flag"];
                     order.price_type = j["price_type"];
                     order.volume_condition = j["volume_condition"];
                     order.time_condition = j["time_condition"];
@@ -756,6 +863,7 @@ namespace kungfu
                     order.order_id = input.order_id;
                     strcpy(order.instrument_id, input.instrument_id);
                     strcpy(order.exchange_id, input.exchange_id);
+                    strcpy(order.source_id, input.source_id);
                     strcpy(order.account_id, input.account_id);
 
                     order.limit_price = input.limit_price;
@@ -768,13 +876,12 @@ namespace kungfu
 
                     order.side = input.side;
                     order.offset = input.offset;
+                    order.hedge_flag = input.hedge_flag;
 
                     order.price_type = input.price_type;
                     order.volume_condition = input.volume_condition;
                     order.time_condition = input.time_condition;
-
                 }
-
 
                 //成交信息
                 struct Trade
@@ -789,6 +896,7 @@ namespace kungfu
 
                     char instrument_id[INSTRUMENT_ID_LEN];   //合约ID
                     char exchange_id[EXCHANGE_ID_LEN];       //交易所ID
+                    char source_id[SOURCE_ID_LEN];           //柜台ID
                     char account_id[ACCOUNT_ID_LEN];         //账号ID
                     char client_id[CLIENT_ID_LEN];           //Client ID
 
@@ -796,6 +904,7 @@ namespace kungfu
 
                     Side side;                               //买卖方向
                     Offset offset;                           //开平方向
+                    HedgeFlag hedge_flag;                    //投机套保标识
 
                     double price;                            //成交价格
                     int64_t volume;                          //成交量
@@ -809,6 +918,9 @@ namespace kungfu
                     const std::string get_exchange_id() const
                     { return std::string(exchange_id); }
 
+                    const std::string get_source_id() const
+                    { return std::string(source_id); }
+
                     const std::string get_account_id() const
                     { return std::string(account_id); }
 
@@ -816,15 +928,30 @@ namespace kungfu
                     { return std::string(client_id); }
 
                     const std::string get_trading_day() const
-                    {
-                        return std::string(trading_day);
-                    }
+                    {return std::string(trading_day);}
+
+                    void set_instrument_id(const std::string& instrument_id)
+                    { strncpy(this->instrument_id, instrument_id.c_str(), INSTRUMENT_ID_LEN); }
+
+                    void set_exchange_id(const std::string& exchange_id)
+                    { strncpy(this->exchange_id, exchange_id.c_str(), EXCHANGE_ID_LEN); }
+
+                    void set_source_id(const std::string& source_id)
+                    { strncpy(this->source_id, source_id.c_str(), SOURCE_ID_LEN); }
+
+                    void set_account_id(const std::string& account_id)
+                    { strncpy(this->account_id, account_id.c_str(), ACCOUNT_ID_LEN); }
+
+                    void set_client_id(const std::string& client_id)
+                    { strncpy(this->client_id, client_id.c_str(), CLIENT_ID_LEN); }
+
+                    void set_trading_day(const std::string& trading_day)
+                    { strncpy(this->trading_day, trading_day.c_str(), DATE_LEN); }
+
 #ifndef _WIN32
                 } __attribute__((packed));
-
 #else
                 };
-#pragma pack(pop)
 #endif
 
                 inline void to_json(nlohmann::json &j, const Trade &trade)
@@ -844,19 +971,20 @@ namespace kungfu
 
                     j["side"] = trade.side;
                     j["offset"] = trade.offset;
+                    j["hedge_flag"] = trade.hedge_flag;
 
-                    j["price"] = FORMAT_DOUBLE(trade.price);
+                    j["price"] = trade.price;
                     j["volume"] = trade.volume;
 
-                    j["tax"] = FORMAT_DOUBLE(trade.tax);
-                    j["commission"] = FORMAT_DOUBLE(trade.commission);
+                    j["tax"] = trade.tax;
+                    j["commission"] = trade.commission;
 
                 }
 
                 inline void from_json(const nlohmann::json &j, Trade &trade)
                 {
                     trade.trade_id = j["trade_id"];
-                    
+
                     trade.order_id = j["order_id"].get<uint64_t>();
 
                     trade.trade_time = j["trade_time"];
@@ -869,6 +997,7 @@ namespace kungfu
 
                     trade.side = j["side"];
                     trade.offset = j["offset"];
+                    trade.hedge_flag = j["hedge_flag"];
 
                     trade.price = j["price"].get<double>();
                     trade.volume = j["volume"];
@@ -878,24 +1007,24 @@ namespace kungfu
                 }
 
                 //账户信息
-                struct AssetInfo
+                struct Asset
                 {
                     int64_t update_time;               //更新时间
                     char trading_day[DATE_LEN];        //交易日
 
+                    uint32_t holder_uid;
                     LedgerCategory ledger_category;
 
-                    char account_id[ACCOUNT_ID_LEN];   //账号ID
-                    char broker_id[BROKER_ID_LEN];     //Broker ID
                     char source_id[SOURCE_ID_LEN];     //柜台ID
-
+                    char broker_id[BROKER_ID_LEN];     //Broker ID
+                    char account_id[ACCOUNT_ID_LEN];   //账号ID
                     char client_id[CLIENT_ID_LEN];     //client ID
 
                     double initial_equity;             //期初权益
                     double static_equity;              //静态权益
                     double dynamic_equity;             //动态权益
 
-                    double realized_pnl;            //累计收益
+                    double realized_pnl;               //累计收益
                     double unrealized_pnl;
 
                     double avail;                      //可用资金
@@ -913,53 +1042,61 @@ namespace kungfu
                     double position_pnl;               //持仓盈亏(期货)
                     double close_pnl;                  //平仓盈亏(期货)
 
-                    std::string get_trading_day()
+                    const std::string get_trading_day() const
                     { return std::string(trading_day); }
 
-                    std::string get_account_id()
+                    const std::string get_account_id() const
                     { return std::string(account_id); }
 
-                    std::string get_broker_id()
-                    { return std::string(broker_id); }
-
-                    std::string get_client_id()
+                    const std::string get_client_id() const
                     { return std::string(client_id); }
 
-                    std::string get_source_id()
+                    const std::string get_source_id() const
                     { return std::string(source_id); }
+
+                    void set_account_id(const std::string& account_id)
+                    { strncpy(this->account_id, account_id.c_str(), ACCOUNT_ID_LEN); }
+
+                    void set_client_id(const std::string& client_id)
+                    { strncpy(this->client_id, client_id.c_str(), CLIENT_ID_LEN); }
+
+                    void set_trading_day(const std::string& trading_day)
+                    { strncpy(this->trading_day, trading_day.c_str(), DATE_LEN); }
+
+                    void set_source_id(const std::string& source_id)
+                    { strncpy(this->source_id, source_id.c_str(), SOURCE_ID_LEN); }
 
 #ifndef _WIN32
                 } __attribute__((packed));
 
 #else
                 };
-#pragma pack(pop)
 #endif
 
-                inline void to_json(nlohmann::json &j, const AssetInfo &asset_info)
+                inline void to_json(nlohmann::json &j, const Asset &asset_info)
                 {
                     j["update_time"] = asset_info.update_time;
-                    j["trading_day"] = std::string(asset_info.trading_day);
+                    j["holder_uid"] = asset_info.holder_uid;
                     j["ledger_category"] = asset_info.ledger_category;
+                    j["trading_day"] = std::string(asset_info.trading_day);
                     j["account_id"] = std::string(asset_info.account_id);
-                    j["broker_id"] = std::string(asset_info.broker_id);
                     j["source_id"] = std::string(asset_info.source_id);
                     j["client_id"] = std::string(asset_info.client_id);
-                    j["initial_equity"] = FORMAT_DOUBLE(asset_info.initial_equity);
-                    j["static_equity"] = FORMAT_DOUBLE(asset_info.static_equity);
-                    j["dynamic_equity"] = FORMAT_DOUBLE(asset_info.dynamic_equity);
-                    j["unrealized_pnl"] = FORMAT_DOUBLE(asset_info.unrealized_pnl);
-                    j["realized_pnl"] =  FORMAT_DOUBLE(asset_info.realized_pnl);
-                    j["avail"] = FORMAT_DOUBLE(asset_info.avail);
-                    j["market_value"] = FORMAT_DOUBLE(asset_info.market_value);
-                    j["margin"] = FORMAT_DOUBLE(asset_info.margin);
-                    j["accumulated_fee"] = FORMAT_DOUBLE(asset_info.accumulated_fee);
-                    j["intraday_fee"] = FORMAT_DOUBLE(asset_info.intraday_fee);
-                    j["frozen_cash"] = FORMAT_DOUBLE(asset_info.frozen_cash);
-                    j["frozen_margin"] = FORMAT_DOUBLE(asset_info.frozen_margin);
-                    j["frozen_fee"] = FORMAT_DOUBLE(asset_info.frozen_fee);
-                    j["position_pnl"] = FORMAT_DOUBLE(asset_info.position_pnl);
-                    j["close_pnl"] = FORMAT_DOUBLE(asset_info.close_pnl);
+                    j["initial_equity"] = asset_info.initial_equity;
+                    j["static_equity"] = asset_info.static_equity;
+                    j["dynamic_equity"] = asset_info.dynamic_equity;
+                    j["unrealized_pnl"] = asset_info.unrealized_pnl;
+                    j["realized_pnl"] =  asset_info.realized_pnl;
+                    j["avail"] = asset_info.avail;
+                    j["market_value"] = asset_info.market_value;
+                    j["margin"] = asset_info.margin;
+                    j["accumulated_fee"] = asset_info.accumulated_fee;
+                    j["intraday_fee"] = asset_info.intraday_fee;
+                    j["frozen_cash"] = asset_info.frozen_cash;
+                    j["frozen_margin"] = asset_info.frozen_margin;
+                    j["frozen_fee"] = asset_info.frozen_fee;
+                    j["position_pnl"] = asset_info.position_pnl;
+                    j["close_pnl"] = asset_info.close_pnl;
                 }
 
                 //持仓信息
@@ -972,8 +1109,10 @@ namespace kungfu
                     InstrumentType instrument_type;          //合约类型
                     char exchange_id[EXCHANGE_ID_LEN];       //交易所ID
 
+                    uint32_t holder_uid;
                     LedgerCategory ledger_category;
 
+                    char source_id[SOURCE_ID_LEN];           //柜台ID
                     char account_id[ACCOUNT_ID_LEN];         //账号ID
                     char client_id[CLIENT_ID_LEN];           //Client ID
 
@@ -985,15 +1124,13 @@ namespace kungfu
                     int64_t frozen_yesterday;                //冻结昨仓
 
                     double last_price;                       //最新价
-                    double open_price;                       //开仓价(期货明细为开仓价; 期货统计为开仓均价，加权平均值; 股票无意义，为0)
 
-                    // 成本价
-                    // 股票: (历史买入总资金 - 历史卖出总资金) / 当前仓位, 如果当前仓位是0则为0
-                    // 期货: ((昨结算 * 昨仓量 + SUM(今仓开仓价 * 量)) * 合约乘数 + SUM(今手续费)) / 合约乘数
-                    double cost_price;
+                    double avg_open_price;                   //开仓均价
+                    double position_cost_price;              //持仓成本价
 
                     double close_price;                      //收盘价(股票和债券)
                     double pre_close_price;                  //昨收价(股票和债券)
+
                     double settlement_price;                 //结算价(期货)
                     double pre_settlement_price;             //昨结算(期货)
 
@@ -1004,36 +1141,47 @@ namespace kungfu
                     double realized_pnl;                     //已实现盈亏
                     double unrealized_pnl;                   //未实现盈亏
 
-                    char open_date[DATE_LEN];                //开仓日(YYYYMMDD,仅期货明细和债券)
-                    char expire_date[DATE_LEN];              //到期日(YYYYMMDD,仅债券)
-
-                    std::string get_trading_day()
+                    const std::string get_trading_day() const
                     { return std::string(trading_day); }
 
-                    std::string get_instrument_id()
+                    const std::string get_instrument_id() const
                     { return std::string(instrument_id); }
 
-                    std::string get_exchange_id()
+                    const std::string get_exchange_id() const
                     { return std::string(exchange_id); }
 
-                    std::string get_account_id()
+                    const std::string get_source_id() const
+                    { return std::string(source_id); }
+
+                    const std::string get_account_id() const
                     { return std::string(account_id); }
 
-                    std::string get_client_id()
+                    const std::string get_client_id() const
                     { return std::string(client_id); }
 
-                    std::string get_open_date()
-                    { return std::string(open_date); }
+                    void set_instrument_id(const std::string& instrument_id)
+                    { strncpy(this->instrument_id, instrument_id.c_str(), INSTRUMENT_ID_LEN); }
 
-                    std::string get_expire_date()
-                    { return std::string(expire_date); }
+                    void set_exchange_id(const std::string& exchange_id)
+                    { strncpy(this->exchange_id, exchange_id.c_str(), EXCHANGE_ID_LEN); }
+
+                    void set_source_id(const std::string& source_id)
+                    { strncpy(this->source_id, source_id.c_str(), SOURCE_ID_LEN); }
+
+                    void set_account_id(const std::string& account_id)
+                    { strncpy(this->account_id, account_id.c_str(), ACCOUNT_ID_LEN); }
+
+                    void set_client_id(const std::string& client_id)
+                    { strncpy(this->client_id, client_id.c_str(), CLIENT_ID_LEN); }
+
+                    void set_trading_day(const std::string& trading_day)
+                    { strncpy(this->trading_day, trading_day.c_str(), DATE_LEN); }
 
 #ifndef _WIN32
                 } __attribute__((packed));
 
 #else
                 };
-#pragma pack(pop)
 #endif
 
                 inline void to_json(nlohmann::json &j, const Position &position)
@@ -1050,82 +1198,154 @@ namespace kungfu
                     j["yesterday_volume"] = position.yesterday_volume;
                     j["frozen_total"] = position.frozen_total;
                     j["frozen_yesterday"] = position.frozen_yesterday;
-                    j["last_price"] = FORMAT_DOUBLE(position.last_price);
-                    j["open_price"] = FORMAT_DOUBLE(position.open_price);
-                    j["cost_price"] = FORMAT_DOUBLE(position.cost_price);
-                    j["close_price"] = FORMAT_DOUBLE(position.close_price);
-                    j["pre_close_price"] = FORMAT_DOUBLE(position.pre_close_price);
-                    j["settlement_price"] = FORMAT_DOUBLE(position.settlement_price);
-                    j["pre_settlement_price"] = FORMAT_DOUBLE(position.pre_settlement_price);
-                    j["margin"] = FORMAT_DOUBLE(position.margin);
-                    j["position_pnl"] = FORMAT_DOUBLE(position.position_pnl);
-                    j["close_pnl"] = FORMAT_DOUBLE(position.close_pnl);
-                    j["realized_pnl"] = FORMAT_DOUBLE(position.realized_pnl);
-                    j["unrealized_pnl"] = FORMAT_DOUBLE(position.unrealized_pnl);
-                    j["open_date"] = std::string(position.open_date);
-                    j["expire_date"] = std::string(position.expire_date);
+                    j["last_price"] = position.last_price;
+                    j["avg_open_price"] = position.avg_open_price;
+                    j["position_cost_price"] = position.position_cost_price;
+                    j["close_price"] = position.close_price;
+                    j["pre_close_price"] = position.pre_close_price;
+                    j["settlement_price"] = position.settlement_price;
+                    j["pre_settlement_price"] = position.pre_settlement_price;
+                    j["margin"] = position.margin;
+                    j["position_pnl"] = position.position_pnl;
+                    j["close_pnl"] = position.close_pnl;
+                    j["realized_pnl"] = position.realized_pnl;
+                    j["unrealized_pnl"] = position.unrealized_pnl;
                 }
 
-                template<typename T>
-                inline std::string to_string(const T &ori)
-                {
-                    nlohmann::json j;
-                    to_json(j, ori);
-                    return j.dump(-1, ' ', false, nlohmann::json::error_handler_t::ignore);;
-                }
-                
-                class Decoder
-                {
-                public:
-                    virtual ~Decoder() {}
-                    virtual std::string json_from_ptr(uintptr_t address) const = 0;
-                };
+            struct PositionEnd
+            {
+                uint32_t holder_uid;
+#ifndef _WIN32
+            } __attribute__((packed));
+#else
+            };
+#endif
 
-                template<typename T>
-                class DecoderT: public Decoder
-                {
-                public:
-                    virtual std::string json_from_ptr(uintptr_t address) const
-                    {
-                        const T& data = *(reinterpret_cast<const T *>(address));
-                        return to_string(data);
-                    }
-                };
+            //持仓明细信息
+            struct PositionDetail
+            {
+                int64_t update_time;                     //更新时间
+                char trading_day[DATE_LEN];              //交易日
 
-                typedef std::shared_ptr<Decoder> decoder_ptr;
+                char instrument_id[INSTRUMENT_ID_LEN];   //合约ID
+                InstrumentType instrument_type;          //合约类型
+                char exchange_id[EXCHANGE_ID_LEN];       //交易所ID
 
-                template<typename T>
-                decoder_ptr make_decoder()
-                {
-                    return std::shared_ptr<Decoder>(new DecoderT<T>());
-                }
+                uint32_t holder_uid;
 
-                typedef std::unordered_map<int, decoder_ptr> decoder_map;
+                char source_id[SOURCE_ID_LEN];           //柜台ID
+                char account_id[ACCOUNT_ID_LEN];         //账号ID
+                char client_id[CLIENT_ID_LEN];           //Client ID
 
-                inline decoder_ptr select_decoder(int msg_type)
-                {
-                    static decoder_map d_map;
-                    if (d_map.empty())
-                    {
-                        d_map.insert(std::make_pair(static_cast<int>(msg::type::Quote), make_decoder<msg::data::Quote>()));
-                        d_map.insert(std::make_pair(static_cast<int>(msg::type::Entrust), make_decoder<msg::data::Entrust>()));
-                        d_map.insert(std::make_pair(static_cast<int>(msg::type::Transaction), make_decoder<msg::data::Transaction>()));
-                        d_map.insert(std::make_pair(static_cast<int>(msg::type::OrderInput), make_decoder<msg::data::OrderInput>()));
-                        d_map.insert(std::make_pair(static_cast<int>(msg::type::OrderAction), make_decoder<msg::data::OrderAction>()));
-                        d_map.insert(std::make_pair(static_cast<int>(msg::type::Order), make_decoder<msg::data::Order>()));
-                        d_map.insert(std::make_pair(static_cast<int>(msg::type::Trade), make_decoder<msg::data::Trade>()));
-                        d_map.insert(std::make_pair(static_cast<int>(msg::type::Position), make_decoder<msg::data::Position>()));
-                        d_map.insert(std::make_pair(static_cast<int>(msg::type::AssetInfo), make_decoder<msg::data::AssetInfo>()));
-                    }
-                    const auto& it = d_map.find(msg_type);
-                    return it == d_map.end() ? nullptr : it->second;
-                }
-                
-                inline std::string json_from_address(int msg_type, uintptr_t address)
-                {
-                    decoder_ptr decoder = select_decoder(msg_type);
-                    return decoder == nullptr ? "{}" : decoder->json_from_ptr(address);
-                }    
+                Direction direction;                     //持仓方向
+
+                int64_t volume;                          //数量
+                int64_t frozen_volume;                   //冻结数量
+
+                double last_price;                       //最新价
+                double open_price;                       //开仓价
+
+                double settlement_price;                 //结算价(期货)
+                double pre_settlement_price;             //昨结算(期货)
+
+                char open_date[DATE_LEN];                //开仓日(YYYYMMDD,仅期货明细和债券)
+
+                uint64_t trade_id;                       //成交ID
+                int64_t trade_time;                      //成交时间
+
+                const std::string get_trading_day() const
+                { return std::string(trading_day); }
+
+                const std::string get_instrument_id() const
+                { return std::string(instrument_id); }
+
+                const std::string get_exchange_id() const
+                { return std::string(exchange_id); }
+
+                const std::string get_source_id() const
+                { return std::string(source_id); }
+
+                const std::string get_account_id() const
+                { return std::string(account_id); }
+
+                const std::string get_client_id() const
+                { return std::string(client_id); }
+
+                const std::string get_open_date() const
+                { return std::string(open_date); }
+
+                void set_account_id(const std::string& account_id)
+                { strncpy(this->account_id, account_id.c_str(), ACCOUNT_ID_LEN); }
+
+                void set_client_id(const std::string& client_id)
+                { strncpy(this->client_id, client_id.c_str(), CLIENT_ID_LEN); }
+
+                void set_trading_day(const std::string& trading_day)
+                { strncpy(this->trading_day, trading_day.c_str(), DATE_LEN); }
+
+                void set_instrument_id(const std::string& instrument_id)
+                { strncpy(this->instrument_id, instrument_id.c_str(), INSTRUMENT_ID_LEN); }
+
+                void set_exchange_id(const std::string& exchange_id)
+                { strncpy(this->exchange_id, exchange_id.c_str(), EXCHANGE_ID_LEN); }
+
+                void set_source_id(const std::string& source_id)
+                { strncpy(this->source_id, source_id.c_str(), SOURCE_ID_LEN); }
+
+                void set_open_date(const std::string& open_date)
+                { strncpy(this->open_date, open_date.c_str(), DATE_LEN); }
+
+#ifndef _WIN32
+            } __attribute__((packed));
+
+#else
+            };
+#endif
+
+            struct PositionDetailEnd
+            {
+                uint32_t holder_uid;
+
+#ifndef _WIN32
+            } __attribute__((packed));
+
+#else
+            };
+#endif
+
+#ifdef _WIN32
+    #pragma pack(pop)
+#endif
+
+            inline void to_json(nlohmann::json &j, const PositionDetail &detail)
+            {
+                j["update_time"] = detail.update_time;
+                j["trading_day"] = std::string(detail.trading_day);
+                j["instrument_id"] = std::string(detail.instrument_id);
+                j["instrument_type"] = detail.instrument_type;
+                j["exchange_id"] = std::string(detail.exchange_id);
+                j["account_id"] = std::string(detail.account_id);
+                j["client_id"] = std::string(detail.client_id);
+                j["direction"] = detail.direction;
+                j["volume"] = detail.volume;
+                j["frozen_volume"] = detail.frozen_volume;
+                j["last_price"] = detail.last_price;
+                j["open_price"] = detail.open_price;
+                j["settlement_price"] = detail.settlement_price;
+                j["pre_settlement_price"] = detail.pre_settlement_price;
+                j["open_date"] = std::string(detail.open_date);
+
+                j["trade_id"] = detail.trade_id;
+                j["trade_time"] = detail.trade_time;
+
+            }
+
+            template<typename T> std::string to_string(const T &ori)
+            {
+                nlohmann::json j;
+                to_json(j, ori);
+                return j.dump(-1, ' ', false, nlohmann::json::error_handler_t::ignore);;
+            }
             }
         }
     }

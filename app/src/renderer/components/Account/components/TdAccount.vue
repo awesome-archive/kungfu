@@ -21,6 +21,7 @@
                     prop="account_id"
                     label="账户"
                     show-overflow-tooltip
+                    min-width="80"
                 >
                     <template slot-scope="props">
                         <span :class="props.row.account_id">{{props.row.account_id.toAccountId()}}</span> 
@@ -29,11 +30,12 @@
                 <el-table-column
                     prop="source_name"
                     label="柜台"
+                    min-width="80"
                     >
                     <template slot-scope="props">
                         <el-tag
-                        v-if="(config[props.row.source_name] || {}).typeName"
-                        :type="config[props.row.source_name].type" 
+                        v-if="(accountSource[props.row.source_name] || {}).typeName"
+                        :type="accountSource[props.row.source_name].type" 
                         >
                             {{props.row.source_name}}
                         </el-tag>
@@ -42,6 +44,7 @@
                 <el-table-column
                     label="状态"
                     show-overflow-tooltip
+                    min-width="70"
                     >
                     <template slot-scope="props">
                         <tr-status 
@@ -53,6 +56,7 @@
                     
                 <el-table-column
                     label="连接"
+                    min-width="60"
                     >
                     <template slot-scope="props">
                         <span @click.stop>
@@ -63,65 +67,103 @@
                     </template>
                 </el-table-column>
                 <el-table-column
+                    class-name="blink-cell"
                     label="实现盈亏"
                     show-overflow-tooltip
                     align="right"
+                    min-width="100"
                     >
                     <template slot-scope="props">
-                        <span :class="{
+                        <span 
+                        :class="{
+                            'tr-table-cell': true,
+                            'number': true,
+                            'nano': !!(accountsAsset[props.row.account_id] || {}).nano,
                             'color-red': calcCash(props.row, 'realized_pnl') > 0,
                             'color-green': calcCash(props.row, 'realized_pnl') < 0,
-                        }">
+                        }"
+                        :key="`realized_pnl_${props.row.account_id}_${calcCash(props.row, 'realized_pnl')}`"                        
+                        >
                         {{calcCash(props.row, 'realized_pnl') || '--'}}
                         </span> 
                     </template>
                 </el-table-column>
                 <el-table-column
+                    class-name="blink-cell"
                     label="浮动盈亏"
                     show-overflow-tooltip
                     align="right"
+                    min-width="110"
                     >
                     <template slot-scope="props">
-                        <span :class="{
+                        <span 
+                        :class="{
+                            'tr-table-cell': true,
+                            'number': true,
+                            'nano': !!(accountsAsset[props.row.account_id] || {}).nano,
                             'color-red': calcCash(props.row, 'unrealized_pnl') > 0,
                             'color-green': calcCash(props.row, 'unrealized_pnl') < 0,
-                        }">
+                        }"
+                        :key="`unrealized_pnl_${props.row.account_id}_${calcCash(props.row, 'unrealized_pnl')}`"                        
+                        >
                         {{calcCash(props.row, 'unrealized_pnl') || '--'}}
                         </span> 
                     </template>
                 </el-table-column>
                 <el-table-column
+                    class-name="blink-cell"
                     label="市值/保证金"
                     show-overflow-tooltip
                     align="right"
+                    min-width="120"
                     >
                     <template slot-scope="props" >
-                        <template v-if="(config[props.row.source_name] || {}).typeName == 'future'">
-                            {{$utils.toDecimal((accountsAsset[props.row.account_id] || {}).margin) + '' || '--'}}
-                        </template>
-                        <!-- market_value -->
-                         <template v-else>
-                            {{$utils.toDecimal((accountsAsset[props.row.account_id] || {}).market_value) + '' || '--'}}
-                        </template>
+                        <span 
+                        :class="{
+                            'tr-table-cell': true,
+                            'number': true,
+                            'nano': !!(accountsAsset[props.row.account_id] || {}).nano,
+                        }"
+                        :key="`${props.row.account_id}_${calcCash(props.row, (isFuture(props.row) ? 'margin' : 'market_value'))}`"                        
+
+                        >
+                            <template v-if="isFuture(props.row)">
+                                {{calcCash(props.row, 'margin') || '--'}}
+                            </template>
+                            <template v-else>
+                                {{calcCash(props.row, 'market_value') || '--'}}
+                            </template>  
+                        </span>          
                     </template>
                 </el-table-column>
                 <el-table-column
+                    class-name="blink-cell"
                     label="可用资金"
                     show-overflow-tooltip
                     align="right"
+                    min-width="120"
                     >
                         <template slot-scope="props">
-                        {{$utils.toDecimal((accountsAsset[props.row.account_id] || {}).avail) + '' || '--'}}
+                            <span
+                            :class="{
+                                'tr-table-cell': true,
+                                'number': true,
+                                'nano': !!(accountsAsset[props.row.account_id] || {}).nano,
+                            }"
+                            :key="`${props.row.account_id}_${calcCash(props.row, 'avail')}`"                        
+                            >
+                                {{calcCash(props.row, 'avail') || '--'}}                            
+                            </span>
                     </template>
                 </el-table-column>
                 <el-table-column
                     label=""
                     align="right"
-                    min-width="140"
+                    min-width="120"
                 >
                     <template slot-scope="props">
                         <span class="tr-oper" @click.stop="handleOpenLogFile(props.row)"><i class="el-icon-document mouse-over" title="打开日志文件"></i></span>
-                        <span class="tr-oper" @click.stop="handleOpenFeeSettingDialog(props.row)"><i class="el-icon-money mouse-over" title="费率设置"></i></span>
+                        <!-- <span class="tr-oper" @click.stop="handleOpenFeeSettingDialog(props.row)"><i class="el-icon-money mouse-over" title="费率设置"></i></span> -->
                         <span class="tr-oper" @click.stop="handleOpenUpdateAccountDialog(props.row)"><i class="el-icon-setting mouse-over" title="账户设置"></i></span>
                         <span :class="['tr-oper-delete', `delete-${props.row.account_id}`] " @click.stop="handleDeleteAccount(props.row)"><i class=" el-icon-delete mouse-over" title="删除账户"></i></span>
                     </template>
@@ -133,11 +175,14 @@
             width="400px" 
             :visible.sync="visiblity.selectSource"
             id="select-source-dialog"
+            @keyup.enter.native="handleSelectSource"
+            :close-on-click-modal="false"
+            :close-on-press-escape="true"
             >
                     <el-radio-group v-model.trim="selectedSource" style="width: 100%">
                         <el-row>
-                            <el-col :span="12" v-for="item of Object.values(config)" :key="item.source" :class="`source-${item.source}`">
-                                <el-radio :label="item.source" :disabled="ifSourceDisable[item.source.toLowerCase()] || false">
+                            <el-col :span="12" v-for="item of Object.values(accountSource || {})" :key="item.source" :class="`source-${item.source}`">
+                                <el-radio :label="item.source">
                                     {{item.source.toUpperCase()}}
                                     <el-tag
                                     v-if="item.typeName"
@@ -171,7 +216,7 @@
             <SetFeeDialog
             v-if="visiblity.setFee"
             :visible.sync="visiblity.setFee"
-            :accountType="(config[feeAccount.source_name] || {}).typeName"
+            :accountType="(accountSource[feeAccount.source_name] || {}).typeName"
             :accountId="feeAccount.account_id"
             :setFeeSettingData="setFeeSettingData"
             :getFeeSettingData="getFeeSettingData"
@@ -183,8 +228,6 @@
 import { mapState, mapGetters } from 'vuex';
 import { debounce } from '__gUtils/busiUtils';
 import * as ACCOUNT_API from '__io/db/account';
-import * as BASE_API from '__io/db/base';
-import { accountSource, ifSourceDisable } from '__gConfig/accountConfig';
 import SetAccountDialog from './SetAccountDialog';
 import SetFeeDialog from './SetFeeDialog';
 import { deleteProcess } from '__gUtils/processUtils';
@@ -197,8 +240,6 @@ export default {
     name: 'account',
 
     data() {
-        this.config = accountSource;
-        this.ifSourceDisable = ifSourceDisable;
         return {
             accountIdKey: '',
             selectedExecutor: '',
@@ -228,6 +269,7 @@ export default {
 
     computed:{
         ...mapState({
+            accountSource: state => state.BASE.accountSource || {},
             mdTdState: state => state.ACCOUNT.mdTdState,
             accountsAsset: state => state.ACCOUNT.accountsAsset,
             accountList: state => state.ACCOUNT.accountList, 
@@ -264,7 +306,9 @@ export default {
     methods:{
         //添加账户，打开选择柜台弹窗
         handleAddAccount(){
-            this.visiblity.selectSource = true
+            this.visiblity.selectSource = true;
+            this.$store.dispatch('getAccountSourceConfig')
+     
         },
 
         //编辑账户
@@ -325,7 +369,7 @@ export default {
             //是否是该柜台下的第一个账户记住，行情自动选中
             t.sourceFirstAccount = -1 === t.accountList.findIndex(item => (item.source_name == t.selectedSource))
             // 加上某些参数的默认值
-            accountSource[t.selectedSource].config.map(item => {
+            t.accountSource[t.selectedSource].config.map(item => {
                 if(item.default !== undefined) {
                     t.accountForm[item.key] = item.default
                 }
@@ -410,6 +454,11 @@ export default {
         refreshData() {
             const t = this
             t.selectedSource = ''
+        },
+
+        //是否为期货
+        isFuture(row) {
+            return (this.accountSource[row.source_name] || {}).typeName == 'future'
         },
 
         //计算持仓盈亏

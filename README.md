@@ -1,6 +1,6 @@
 # Intro 简介
 
-功夫是 [Taurus.ai](http://taurus.ai) 团队专为量化交易者设计的开源交易执行系统。功夫想要解决以下问题：
+功夫是 [Taurus.ai](http://www.taurusai.com) 团队专为量化交易者设计的开源交易执行系统。功夫想要解决以下问题：
 * 低延迟交易 - 量化交易者对系统内响应速度有极高要求，功夫提供微秒级别的系统响应，支持带纳秒级时间戳的交易数据实时存储和盘后分析。
 * 开放的策略编写方式 - 功夫支持 Python 3 及 C++ 形式的策略编写，策略师可以不受限的自由使用第三方计算库，放飞创意。
 * 友好的使用方式 - 告别 Linux shell 小黑屋，功夫提供图形化操作界面，简化策略运维流程。而进阶用户仍然具备通过底层 API 以无界面形式使用系统的能力。
@@ -24,10 +24,10 @@
   * [electron-builder](https://www.electron.build) - 借助 Electron 技术，功夫可以提供本地化应用程序的安装使用体验。
 
 功夫在系统设计上支持任意柜台的对接（涵盖中国所有股票、期货市场），目前功夫开源版仅提供 CTP 和 XTP 柜台对接的实现。
-如果需要接入更多柜台请通过 [Taurus.ai](http://taurus.ai) 官网联系我们。
+如果需要接入更多柜台请通过 [Taurus.ai](http://www.taurusai.com) 官网联系我们。
 开发者也可根据长拳标准自行开发新的柜台接口。
 
-初次使用请参考 [功夫交易系统用户手册](https://app.gitbook.com/@taurusai/s/kungfu-userdoc/)
+初次使用请参考 [功夫交易系统用户手册](https://taurusai.gitbook.io/kungfu-manual/)
 
 更多介绍请关注知乎专栏 [硅商冲击](https://zhuanlan.zhihu.com/silicontrader)。
 
@@ -47,18 +47,21 @@ cmake (>3.12)
 
 功夫编译依赖 [Node.js](https://nodejs.org)，建议预先进行如下设置加速依赖包的下载：
 ```
-$ npm config set registry https://registry.npm.taobao.org
-$ npm config set puppeteer_download_host https://npm.taobao.org/mirrors
-$ npm config set electron_mirror https://npm.taobao.org/mirrors/electron/
-$ npm config set sass-binary-site https://npm.taobao.org/mirrors/node-sass
+npm config set registry https://registry.npm.taobao.org
+npm config set puppeteer_download_host https://npm.taobao.org/mirrors
+npm config set electron_mirror https://npm.taobao.org/mirrors/electron/
+npm config set sass-binary-site https://npm.taobao.org/mirrors/node-sass
+npm config set npm_config_disturl=https://npm.taobao.org/mirrors/atom-shell
 ```
+
+:electron-builder-binaries 这个依赖因为众所周知的原因可能会出现下载失败，可以通过 https://my.oschina.net/u/1240907/blog/1926061 这篇文章中的方法解决
 
 #### MacOSX
 
 ```
-$ brew install git cmake node@10
-$ npm install -g yarn electron-builder
-$ pip install pipenv
+brew install git cmake node@10
+npm install -g yarn electron-builder
+pip install pipenv
 ```
 
 #### Windows
@@ -72,11 +75,35 @@ C:\> npm install -g yarn electron-builder
 C:\> pip install pipenv
 ```
 
+注意不要使用 Win64 后缀的 generator，如果遇到如下报错：
+
+```
+CMake Error:
+  Generator
+
+    Visual Studio 15 2017 Win64
+
+  does not support platform specification, but platform
+
+    x64
+
+  was specified.
+```
+
+需要手动指定 cmake generator 之后重新编译：
+
+```
+npm config set cmake_js_G "Visual Studio 15 2017"
+yarn clean
+yarn build
+```
+
 #### Linux
 
 确保编译器支持 C++ 17，例如对于 CentOS，升级 gcc 到 5.0 以上：
 
 ```
+yum install rpm-build
 yum -y install centos-release-scl
 yum -y install devtoolset-8-gcc devtoolset-8-gcc-c++ devtoolset-8-binutils
 echo "source /opt/rh/devtoolset-8/enable" >> /etc/profile
@@ -174,5 +201,5 @@ $HOME/.local/share/virtualenvs      # pipenv(unix) 存储的 Python 依赖
 
 # Contribute 开发
 
-开发文档即将上线，请关注 [Taurus.ai](http://taurus.ai) 官网。
-QQ 交流群 312745666，入群问题答案：taurus.ai
+开发文档即将上线，请关注 [Taurus.ai](http://www.taurusai.com) 官网。
+QQ 交流群 312745666，入群问题答案：kungfu.trader

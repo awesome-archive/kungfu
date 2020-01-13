@@ -5,12 +5,13 @@ const sqlite3 = require('kungfu-core').sqlite3.verbose();
  * @param  {sql string} sql
  * @param  {sql args} args
  */
-export const runInsertUpdateDeleteDB = (dbPath: string, sql: string, args: any): Promise<any> => {
-        return new Promise((resolve, reject) => {
+export const runInsertUpdateDeleteDB = (dbPath: string, sql: string, args?: any): Promise<any> => {   
+    return new Promise((resolve, reject) => {
             if(!existsSync(dbPath)){
                 throw new Error(`${dbPath} 不存在！`)
             }
             const db = new sqlite3.Database(dbPath)
+            db.configure('busyTimeout', 5000)
             db.serialize(() => {
                 db.run(sql, args, (err: Error, res: any) => {
                     if(err) reject(err)
@@ -27,6 +28,7 @@ export const runBatchInsertDB = (dbPath: string, sql: string, batchList: any[]):
             throw new Error(`${dbPath} 不存在！`)
         }
         const db = new sqlite3.Database(dbPath)
+        db.configure('busyTimeout', 5000)
         const stmt = db.prepare(sql);
         batchList.forEach((l: any): void => {
             stmt.run(l)
@@ -49,6 +51,7 @@ export const runClearDB = (dbPath: string, tableName: string): Promise<any> => {
             throw new Error(`${dbPath} 不存在！`)
         }
         const db = new sqlite3.Database(dbPath)
+        db.configure('busyTimeout', 5000)
         db.serialize(() => {
             db.run(`DELETE FROM ${tableName};`, (err: Error, res: any): void => {
                 if(err) reject(err)
@@ -69,11 +72,12 @@ export const runClearDB = (dbPath: string, tableName: string): Promise<any> => {
 export const runSelectDB = (dbPath: string, sql: string, args?: any): Promise<any[]> =>{
     return new Promise((resolve, reject) => {
         if(!existsSync(dbPath)){
-            if(process.env.NODE_ENV === 'development') throw new Error(`${dbPath} is not exist`)
+            if(process.env.NODE_ENV !== 'production') throw new Error(`${dbPath} is not exist`)
             resolve([]);
             return;
         }
         const db = new sqlite3.Database(dbPath)
+        db.configure('busyTimeout', 5000)
         db.serialize(() => {
             db.all(sql, args, (err: Error, res: any) => {
                 if(err) reject(err)    

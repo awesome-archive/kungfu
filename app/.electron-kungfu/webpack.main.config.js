@@ -88,6 +88,7 @@ let mainConfig = {
   ],
   resolve: {
     alias: {
+      '__root': path.join(__dirname, '..'),
       '@': path.join(__dirname, '../src/renderer'),
       '__gUtils': path.join(__dirname, '../shared/utils'),
       '__gConfig': path.join(__dirname, '../shared/config'),
@@ -99,30 +100,40 @@ let mainConfig = {
   target: 'electron-main'
 }
 
+const { getCommitVersion } = require('./utils');
+const gitCommitVersion = getCommitVersion() || 'latest'
+console.log('-------------', gitCommitVersion, '-------------')
+
 /**
  * Adjust mainConfig for development settings
  */
 if (process.env.NODE_ENV !== 'production') {
   mainConfig.plugins.push(
     new webpack.DefinePlugin({
+      'git_commit_version': `"${gitCommitVersion.toString()}"`,
+      'process.env.NODE_ENV': '"development"'
+    }),
+    new webpack.DefinePlugin({
       '__resources': `"${path.join(__dirname, '../resources').replace(/\\/g, '\\\\')}"`,
     })
   )
 }
 
+
 /**
  * Adjust mainConfig for production settings
  */
 if (process.env.NODE_ENV === 'production') {
+
   mainConfig.plugins.push(
     new OptimizeJsPlugin({
       sourceMap: false
     }),
     new webpack.DefinePlugin({
+      'git_commit_version': `"${gitCommitVersion.toString()}"`,
       'process.env.NODE_ENV': '"production"',
     })
   )
 }
-
 
 module.exports = mainConfig

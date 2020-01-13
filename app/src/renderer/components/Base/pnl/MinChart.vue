@@ -2,7 +2,7 @@
 <template>
     <div class="min-chart">
         <div class="min-current pnl-statis">
-            <div>日内收益率：<span :class="{'text-overflow': true, 'color-green': intradayPnlRatio < 0, 'color-red': intradayPnlRatio > 0}" :title="intradayPnlRatio + '%'">{{intradayPnlRatio + '%'}}</span> </div>
+            <!-- <div>日内收益率：<span :class="{'text-overflow': true, 'color-green': intradayPnlRatio < 0, 'color-red': intradayPnlRatio > 0}" :title="intradayPnlRatio + '%'">{{intradayPnlRatio + '%'}}</span> </div> -->
             <div>日内盈亏：<span :class="{'text-overflow': true, 'color-green': intradayPnl < 0, 'color-red': intradayPnl > 0}" :title="intradayPnl">{{intradayPnl}}</span></div>
         </div>
         <tr-no-data v-if="minPnlData.length == 0 && rendererPnl"/>
@@ -67,7 +67,7 @@ export default {
 
     computed:{
         ...mapState({
-            calendar: state => state.BASE.calendar, //日期信息，包含交易日
+            tradingDay: state => state.BASE.tradingDay, //日期信息，包含交易日
         }),
 
         intradayPnl(){
@@ -76,25 +76,26 @@ export default {
             return t.calcuIntradayPnl(t.minPnlData[t.minPnlData.length - 1])
         },
 
-        intradayPnlRatio(){
-            const t = this;
-            if(!t.minPnlData.length) return '--'
-            const firstEquityDaily = toDecimal(t.minPnlData[0].static_equity, 2)
-            return toDecimal(t.intradayPnl / firstEquityDaily , 4, 2)
-        },
+        // intradayPnlRatio(){
+        //     const t = this;
+        //     if(!t.minPnlData.length) return '--'
+        //     const firstEquityDaily = toDecimal(t.minPnlData[0].static_equity, 2)
+        //     return toDecimal(t.intradayPnl / firstEquityDaily , 4, 2)
+        // },
     },
 
     
     mounted() {
-        this.rendererPnl = true;
-        if(this.currentId) this.getMinData();
+        const t = this;
+        t.rendererPnl = true;
+        t.resetData();
+        if(t.currentId) t.getMinData();
     },
 
     watch: {
         currentId(val) {
-            if(!val)return;
             this.resetData();
-            this.getMinData()
+            if(val) this.getMinData();
         },
 
         value(val) {
@@ -112,10 +113,11 @@ export default {
         },
 
         //检测交易日的变化，当变化的时候，重新获取数据
-        'calendar.trading_day'(val, oldVal) {
-            if(!oldVal && !val && !this.currentId) return;
-            this.resetData();
-            this.getMinData();
+        tradingDay(val, oldVal) {
+            const t = this;
+            if(!oldVal && !val && !t.currentId) return;
+            this.resetData();            
+            if(t.currentId) t.getMinData();
         }
     },
 
@@ -135,8 +137,7 @@ export default {
         getMinData() {
             const t = this
             const id = t.currentId;
-            t.getCalendar()
-            .then(() => t.minMethod(t.currentId, t.calendar.trading_day))
+            t.minMethod(t.currentId, t.tradingDay)
             .then(data => {
                 //当调用的传值和当前的传值不同的是，则返回
                 if(id != t.currentId) return
@@ -154,13 +155,6 @@ export default {
             })
             .catch(err => t.$message.error(err.message || '获取失败'))
             .finally(() => t.initChart())
-        },
-
-        //如果有交易日，则不获取
-        getCalendar() {
-            const t = this;
-            if(t.calendar.trading_day) return new Promise(resolve => resolve())
-            else return t.$store.dispatch('getCalendar')
         },
 
         dealNanomsg(nanomsg) {
@@ -185,7 +179,7 @@ export default {
         },
 
         calcuIntradayPnl(pnlData) {
-            return toDecimal(pnlData.dynamic_equity - pnlData.static_equity)
+            return toDecimal(pnlData.unrealized_pnl + pnlData.realized_pnl)
         },
 
         updateChart() {

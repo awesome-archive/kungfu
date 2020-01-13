@@ -37,6 +37,9 @@ namespace kungfu
 
             void run();
 
+            bool is_live()
+            { return live_; }
+
             void signal_stop()
             { live_ = false; };
 
@@ -55,16 +58,27 @@ namespace kungfu
             int64_t now()
             { return now_; }
 
+            yijinjing::journal::reader_ptr get_reader() const
+            { return reader_; }
+
             bool has_location(uint32_t hash);
 
-            bool has_location(yijinjing::data::mode m, yijinjing::data::category c, const std::string &group, const std::string &name);
+            yijinjing::data::location_ptr get_location(uint32_t hash);
 
-            const yijinjing::data::location_ptr get_location(uint32_t hash);
+            bool has_writer(uint32_t dest_id);
 
             yijinjing::journal::writer_ptr get_writer(uint32_t dest_id);
 
+            bool has_channel(uint64_t hash) const ;
+
+            const yijinjing::msg::data::Channel& get_channel(uint64_t hash) const ;
+
+            std::unordered_map<uint64_t, yijinjing::msg::data::Channel>& get_channels() { return channels_; }
+
         protected:
+            std::unordered_map<uint64_t, yijinjing::msg::data::Channel> channels_;
             std::unordered_map<uint32_t, yijinjing::data::location_ptr> locations_;
+
             yijinjing::journal::reader_ptr reader_;
             std::unordered_map<uint32_t, yijinjing::journal::writer_ptr> writers_;
             int64_t begin_time_;
@@ -76,11 +90,17 @@ namespace kungfu
 
             virtual void deregister_location(int64_t trigger_time, uint32_t location_uid);
 
+            virtual void register_channel(int64_t trigger_time, const yijinjing::msg::data::Channel &channel);
+
+            virtual void deregister_channel(int64_t trigger_time, uint64_t channel_uid);
+
+            void deregister_channel_by_source(uint32_t source_id);
+
             void require_write_to(uint32_t source_id, int64_t trigger_time, uint32_t dest_id);
 
             void require_read_from(uint32_t dest_id, int64_t trigger_time, uint32_t source_id, bool pub);
 
-            virtual void produce(const rx::subscriber<yijinjing::event_ptr> &sb);
+            void produce(const rx::subscriber<yijinjing::event_ptr> &sb);
 
             virtual bool produce_one(const rx::subscriber<yijinjing::event_ptr> &sb);
 
@@ -88,7 +108,9 @@ namespace kungfu
 
         private:
             yijinjing::io_device_with_reply_ptr io_device_;
-            bool live_ = true;
+            volatile bool live_ = true;
+
+            static void delegate_produce(hero *instance, const rx::subscriber<yijinjing::event_ptr> &sb);
         };
     }
 }

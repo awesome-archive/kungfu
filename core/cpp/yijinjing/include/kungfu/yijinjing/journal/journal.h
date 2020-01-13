@@ -87,7 +87,7 @@ namespace kungfu
             class reader
             {
             public:
-                explicit reader(bool lazy) : lazy_(lazy)
+                explicit reader(bool lazy) : lazy_(lazy), current_(nullptr)
                 {};
 
                 ~reader();
@@ -117,7 +117,7 @@ namespace kungfu
 
             private:
                 const bool lazy_;
-                journal_ptr current_;
+                journal *current_;
                 std::vector<journal_ptr> journals_;
             };
 
@@ -194,7 +194,7 @@ namespace kungfu
                     journal_->next();
                 }
 
-                void write_raw(int64_t trigger_time, int32_t msg_type, char *data, uint32_t length);
+                void write_raw(int64_t trigger_time, int32_t msg_type, uintptr_t data, uint32_t length);
 
             private:
                 std::mutex writer_mtx_;

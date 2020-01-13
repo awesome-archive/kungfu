@@ -2,11 +2,12 @@
 // Created by qlu on 2019/1/10.
 //
 
-#ifndef KUNGFU_DATAPARSER_H
-#define KUNGFU_DATAPARSER_H
+#ifndef KUNGFU_XTP_EXT_TYPE_CONVERT_H
+#define KUNGFU_XTP_EXT_TYPE_CONVERT_H
 
 #include <cstdio>
 #include <cstring>
+#include <ctime>
 
 #include "xtp_api_struct.h"
 
@@ -19,14 +20,32 @@ namespace kungfu
     {
         namespace xtp
         {
-
             using namespace kungfu::wingchun::msg::data;
-
-            inline void from_xtp_timestamp(int64_t xtp_time, int64_t nsec)
+            inline XTP_PROTOCOL_TYPE get_xtp_protocol_type(const std::string &p)
             {
-                //YYYYMMDDHHMMSSsss -> nano seconds
-                nsec = kungfu::yijinjing::time::strptime(std::to_string(xtp_time).c_str(), "%Y%m%d%H%M%S") +
-                       xtp_time % 1000 * kungfu::yijinjing::time_unit::NANOSECONDS_PER_MILLISECOND;
+                if (p == "udp")
+                {
+                    return XTP_PROTOCOL_UDP;
+                }
+                else
+                {
+                    return XTP_PROTOCOL_TCP;
+                }
+            }
+
+            inline int64_t nsec_from_xtp_timestamp(int64_t xtp_time)
+            {
+                std::tm result = {};
+                result.tm_year =  xtp_time / (int64_t)1e13 - 1900;
+                result.tm_mon = xtp_time % (int64_t)1e13 / (int64_t)1e11 -1;
+                result.tm_mday = xtp_time % (int64_t)1e11 / (int64_t)1e9;
+                result.tm_hour = xtp_time % (int64_t)1e9 / (int64_t)1e7;
+                result.tm_min =  xtp_time % (int)1e7 / (int)1e5;
+                result.tm_sec = xtp_time % (int)1e5 /(int)1e3;
+                int milli_sec = xtp_time %(int)1e3;
+                std::time_t parsed_time = std::mktime(&result);
+                int64_t nano = parsed_time * kungfu::yijinjing::time_unit::NANOSECONDS_PER_SECOND;
+                return parsed_time * kungfu::yijinjing::time_unit::NANOSECONDS_PER_SECOND + milli_sec * kungfu::yijinjing::time_unit::NANOSECONDS_PER_MILLISECOND;
             }
 
             inline void from_xtp(const XTP_MARKET_TYPE &xtp_market_type, char *exchange_id)
@@ -51,6 +70,22 @@ namespace kungfu
                 } else
                 {
                     xtp_market_type = XTP_MKT_UNKNOWN;
+                }
+            }
+
+            inline std::string exchange_id_from_xtp(const XTP_EXCHANGE_TYPE ex)
+            {
+                if (ex == XTP_EXCHANGE_SH)
+                {
+                    return EXCHANGE_SSE;
+                }
+                else if(ex == XTP_EXCHANGE_SZ)
+                {
+                    return EXCHANGE_SZE;
+                }
+                else
+                {
+                    return "Unknown";
                 }
             }
 
@@ -79,44 +114,52 @@ namespace kungfu
                 }
             }
 
-            inline void
-            from_xtp(const XTP_PRICE_TYPE &xtp_price_type, PriceType &price_type, TimeCondition &time_condition, VolumeCondition &volume_condition)
+            inline void from_xtp(const XTP_PRICE_TYPE &xtp_price_type, const  XTP_MARKET_TYPE &xtp_exchange_type, PriceType &price_type)
             {
                 if (xtp_price_type == XTP_PRICE_LIMIT)
-                {
                     price_type = PriceType::Limit;
-                    time_condition = TimeCondition::GFD;
-                    volume_condition = VolumeCondition::Any;
-                } else if (xtp_price_type == XTP_PRICE_BEST5_OR_CANCEL)
+                else if (xtp_price_type == XTP_PRICE_BEST5_OR_CANCEL)
+                    price_type = PriceType::FakBest5;
+                else if (xtp_exchange_type == XTP_MKT_SH_A)
                 {
-                    price_type = PriceType::Best5;
-                    time_condition = TimeCondition::IOC;
-                    volume_condition = VolumeCondition::Any;
+                    if (xtp_price_type == XTP_PRICE_BEST5_OR_LIMIT)
+                        price_type = PriceType::ReverseBest;
                 }
+                else if(xtp_exchange_type == XTP_MKT_SZ_A)
+                {
+                    if (xtp_price_type == XTP_PRICE_BEST_OR_CANCEL)
+                        price_type = PriceType::Fak;
+                    else if (xtp_price_type == XTP_PRICE_FORWARD_BEST)
+                        price_type = PriceType::ForwardBest;
+                    else if (xtp_price_type == XTP_PRICE_REVERSE_BEST_LIMIT)
+                        price_type = PriceType::ReverseBest;
+                }
+                else
+                    price_type = PriceType::UnKnown;
             }
 
-            inline void to_xtp(XTP_PRICE_TYPE &xtp_price_type, const PriceType &price_type, const TimeCondition &time_condition,
-                               const VolumeCondition &volume_condition)
+            inline void to_xtp(XTP_PRICE_TYPE &xtp_price_type, const PriceType &price_type, const char* exchange)
             {
-                if (price_type == PriceType::Limit && time_condition == TimeCondition::GFD) // 限价
-                {
+                if (price_type == PriceType::Limit)
                     xtp_price_type = XTP_PRICE_LIMIT;
-                } else if (price_type == PriceType::Best && time_condition == TimeCondition::IOC) //
-                {
-                    xtp_price_type = XTP_PRICE_BEST_OR_CANCEL;
-                } else if (price_type == PriceType::Best5 && time_condition == TimeCondition::IOC) // 最优五档成交剩余转撤销
-                {
+                else if ((price_type == PriceType::Any) || (price_type == PriceType::FakBest5))
                     xtp_price_type = XTP_PRICE_BEST5_OR_CANCEL;
-                } else if (price_type == PriceType::Best5 && time_condition == TimeCondition::GFD) // 最优五档成交剩余转限价
+                else if (strcmp(exchange, EXCHANGE_SSE) == 0)
                 {
-                    xtp_price_type = XTP_PRICE_BEST5_OR_LIMIT;
-                } else if (price_type == PriceType::ForwardBest) //本方最优价
-                {
-                    xtp_price_type = XTP_PRICE_FORWARD_BEST;
-                } else if (price_type == PriceType::ReverseBest && time_condition == TimeCondition::GFD)
-                {
-                    xtp_price_type = XTP_PRICE_REVERSE_BEST_LIMIT;
+                    if (price_type == PriceType::ReverseBest)
+                        xtp_price_type = XTP_PRICE_BEST5_OR_LIMIT;
                 }
+                else if (strcmp(exchange, EXCHANGE_SZE) == 0)
+                {
+                    if (price_type == PriceType::Fak)
+                        xtp_price_type = XTP_PRICE_BEST_OR_CANCEL;
+                    else if (price_type == PriceType::ForwardBest)
+                        xtp_price_type = XTP_PRICE_FORWARD_BEST;
+                    else if (price_type == PriceType::ReverseBest)
+                        xtp_price_type = XTP_PRICE_REVERSE_BEST_LIMIT;
+                }
+                else
+                    xtp_price_type = XTP_PRICE_TYPE_UNKNOWN;
             }
 
             inline void from_xtp(const XTP_ORDER_STATUS_TYPE &xtp_order_status, OrderStatus &status)
@@ -175,8 +218,8 @@ namespace kungfu
             inline void from_xtp(const XTPMarketDataStruct &ori, Quote &des)
             {
                 strcpy(des.source_id, SOURCE_XTP);
+                des.data_time = nsec_from_xtp_timestamp(ori.data_time);
                 strcpy(des.trading_day, yijinjing::time::strftime(des.data_time, "%Y%m%d").c_str());
-                from_xtp_timestamp(ori.data_time, des.data_time);
                 strcpy(des.instrument_id, ori.ticker);
                 from_xtp(ori.exchange_id, des.exchange_id);
 
@@ -224,7 +267,7 @@ namespace kungfu
                 des.price = ori.limit_price;
                 des.quantity = ori.volume;
                 to_xtp(des.side, ori.side);
-                to_xtp(des.price_type, ori.price_type, ori.time_condition, ori.volume_condition);
+                to_xtp(des.price_type, ori.price_type, ori.exchange_id);
                 des.business_type = XTP_BUSINESS_TYPE_CASH;
             }
 
@@ -237,7 +280,7 @@ namespace kungfu
             {
                 strcpy(des.instrument_id, ori.ticker);
                 from_xtp(ori.market, des.exchange_id);
-                from_xtp(ori.price_type, des.price_type, des.time_condition, des.volume_condition);
+                from_xtp(ori.price_type, ori.market, des.price_type);
                 des.volume = ori.quantity;
                 des.volume_traded = ori.qty_traded;
                 des.volume_left = ori.qty_left;
@@ -251,7 +294,7 @@ namespace kungfu
                 }
                 if (ori.update_time > 0)
                 {
-                    from_xtp_timestamp(ori.update_time, des.update_time);
+                    des.update_time = nsec_from_xtp_timestamp(ori.update_time);
                 }
             }
 
@@ -267,7 +310,7 @@ namespace kungfu
                 {
                     des.instrument_type = InstrumentType::Stock;
                 }
-                from_xtp_timestamp(ori.trade_time, des.trade_time);
+                des.trade_time = nsec_from_xtp_timestamp(ori.trade_time);
             }
 
             inline void from_xtp(const XTPQueryStkPositionRsp &ori, Position &des)
@@ -275,14 +318,13 @@ namespace kungfu
                 strcpy(des.instrument_id, ori.ticker);
                 from_xtp(ori.market, des.exchange_id);
                 des.volume = ori.total_qty;
-                des.yesterday_volume = ori.yesterday_position;
-                des.cost_price = ori.avg_price;
+                des.yesterday_volume = ori.sellable_qty;
+                des.position_cost_price = ori.avg_price;
             }
 
-            inline void from_xtp(const XTPQueryAssetRsp &ori, AssetInfo &des)
+            inline void from_xtp(const XTPQueryAssetRsp &ori, Asset &des)
             {
                 strcpy(des.source_id, SOURCE_XTP);
-                des.ledger_category = LedgerCategory::Account;
                 des.avail = ori.buying_power;
             }
 
@@ -290,7 +332,7 @@ namespace kungfu
             {
                 from_xtp(ori.exchange_id, des.exchange_id);
                 strcpy(des.instrument_id, ori.ticker);
-                from_xtp_timestamp(ori.data_time, des.data_time);
+                des.data_time = nsec_from_xtp_timestamp(ori.data_time);
 
                 des.price = ori.entrust.price;
                 des.volume = ori.entrust.qty;
@@ -305,7 +347,7 @@ namespace kungfu
                     des.price_type = PriceType::Limit;
                 } else if (ori.entrust.ord_type == 'U')
                 {
-                    des.price_type = PriceType::Best;
+                    des.price_type = PriceType::ForwardBest;
                 }
             }
 
@@ -315,7 +357,7 @@ namespace kungfu
 
                 from_xtp(ori.exchange_id, des.exchange_id);
                 strcpy(des.instrument_id, ori.ticker);
-                from_xtp_timestamp(ori.data_time, des.data_time);
+                des.data_time = nsec_from_xtp_timestamp(ori.data_time);
 
                 des.main_seq = ori.trade.channel_no;
                 des.seq = ori.trade.seq;
@@ -362,4 +404,4 @@ namespace kungfu
         }
     }
 }
-#endif //KUNGFU_DATAPARSER_H
+#endif //KUNGFU_XTP_EXT_TYPE_CONVERT_H

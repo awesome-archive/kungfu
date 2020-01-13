@@ -1,7 +1,9 @@
-import { KF_HOME, KUNGFU_ENGINE, buildProcessLogPath } from '__gConfig/pathConfig';
-import { logger } from '__gUtils/logUtils';
+import { KF_HOME, KUNGFU_ENGINE_PATH, KF_CONFIG_PATH, buildProcessLogPath } from '__gConfig/pathConfig';
 import { platform } from '__gConfig/platformConfig';
+import { logger } from '__gUtils/logUtils';
+import { readJsonSync } from '__gUtils/fileUtils';
 import { getProcesses } from 'getprocesses';
+
 
 const path = require('path');
 const fkill = require('fkill');
@@ -9,40 +11,70 @@ const taskkill = require('taskkill');
 export const pm2 = require('pm2');
 
 //=========================== task kill =========================================
-
-const winKill = (tasks: string[]): any => {
+export const findProcessByKeywords = (tasks: string[]): Promise<any> => {
     let pIdList: number[] = [];
     return getProcesses().then(processes => {
         processes.forEach(p => {
             const rawCommandLine = p.rawCommandLine
             tasks.forEach((task: string): void => {
-                if(rawCommandLine.indexOf(task) !== -1) pIdList.push(p.pid)
+                if(rawCommandLine.indexOf(task) !== -1) {
+                    pIdList.push(p.pid)
+                }
             })
         })
+        return pIdList
+    }) 
+}
+
+const winKill = async (tasks: string[]): Promise<any> => {
+    try {
+        const pIdList: any = await findProcessByKeywords(tasks);
         if(!pIdList || !pIdList.length) return new Promise(resolve => resolve(true))
         return taskkill(pIdList, {
             force: true,
-            tree: platform === 'win' 
-        })
-    })
+            tree: true
+        })      
+    } catch (err) {
+        throw err
+    }
 }
 
-const unixKill = (tasks: string[]): any => {
+const macKill = (tasks: string[]): any => {
     return fkill(tasks, {
         force: true,
-        silent: true 
+        silent: true,
+        ignoreCase: true
     })
 }
 
-const kfKill = (tasks: string[]): any => {
-    if(platform !== 'win') return unixKill(tasks)
+const linuxKill = async (tasks: string[]): Promise<any> => {
+    try {
+        const pIdList: any = await findProcessByKeywords(tasks);
+        if(!pIdList || !pIdList.length) return new Promise(resolve => resolve(true))
+        return fkill(pIdList, {
+            force: true,
+            silent: true,
+            ignoreCase: true
+        })    
+    } catch (err) {
+        throw err
+    }
+}
+
+export const kfKill = (tasks: string[]): any => {
+    if(platform === 'mac') return macKill(tasks)
+    else if(platform === 'linux') return linuxKill(tasks)
     else return winKill(tasks)
 }
 
+const kfc = platform === 'win' ? 'kfc.exe' : 'kfc';
 
-export const killKfc = () => kfKill(['kfc'])
+export const killKfc = () => kfKill([kfc])
 
-export const killExtra = () => kfKill(['kfc', 'pm2'])
+export const killKungfu = () => kfKill(['kungfu'])
+
+export const killExtra = () => kfKill([kfc, 'pm2'])
+
 
 //=========================== pm2 manager =========================================
 
@@ -50,7 +82,7 @@ const pm2Connect = (): Promise<void> => {
     return new Promise((resolve, reject) => {
         try{
             let noDaemon = platform === 'win' ? true : false
-            if(process.env.NODE_ENV === 'development') noDaemon = false;
+            if(process.env.NODE_ENV !== 'production') noDaemon = false;
             pm2.connect(noDaemon, (err: Error): void => {
                 if(err) {
                     process.exit(2);
@@ -97,8 +129,7 @@ const pm2Delete = async (target: string): Promise<void> => {
                         reject(err)
                         return;
                     }
-                    resolve()
-                    
+                    resolve()         
                 })
             }catch(err){
                 logger.error(err)
@@ -136,9 +167,12 @@ export const describeProcess = (name: string): Promise<any> => {
 
 export const startProcess = async (options: any, no_ext = false): Promise<object> => {
     const extensionName = platform === 'win' ? '.exe' : ''
+    const kfConfig: any = readJsonSync(KF_CONFIG_PATH) || {}
+    const logLevel: string = ((kfConfig.log || {}).level) || '';
     options = {
         ...options,
-        "cwd": path.join(KUNGFU_ENGINE, 'kfc'),
+        "args": [logLevel, options.args].join(' '),
+        "cwd": path.join(KUNGFU_ENGINE_PATH, 'kfc'),
         "script": `kfc${extensionName}`,
         "log_type": "json",
         "out_file": buildProcessLogPath(options.name),
@@ -161,7 +195,6 @@ export const startProcess = async (options: any, no_ext = false): Promise<object
         pm2Connect().then(() => {
             try{
                 pm2.start(options, (err: Error, apps: object): void => { 
-                    logger.info(err, apps)
                     if(err) {
                         logger.error(err)
                         reject(err);
@@ -183,26 +216,31 @@ export const startMaster = async(force: boolean): Promise<void> => {
     const master = await describeProcess(processName);
     if(master instanceof Error) throw master
     const masterStatus = master.filter((m: any) => m.pm2_env.status === 'online')
-    if(!force && masterStatus.length === master.length && master.length !== 0) throw new Error('master正在运行！')
-    try{ await killKfc() } catch (err) {}
+    if(!force && masterStatus.length === master.length && master.length !== 0) throw new Error('kungfu master正在运行！')
+    try{ 
+        await killKfc()
+    } catch (err) {
+        logger.error(err)
+    }
     return startProcess({
         "name": processName,
-        "args": "-l trace master"
+        "args": "master"
     }, true).catch(err => logger.error(err))
 }
 
-//启动watcher
-export const startWatcher = async(force: boolean): Promise<void> => {
-    const processName = 'watcher';
-    const watcher = await describeProcess(processName);
-    if(watcher instanceof Error) throw watcher
-    const watcherStatus = watcher.filter((m: any): boolean => m.pm2_env.status === 'online')
-    if(!force && watcherStatus.length === watcher.length && watcher.length !== 0) throw new Error('kungfu watcher 正在运行！')
+//启动ledger
+export const startLedger = async(force: boolean): Promise<void> => {
+    const processName = 'ledger';
+    const ledger = await describeProcess(processName);
+    if(ledger instanceof Error) throw ledger
+    const ledgerStatus = ledger.filter((m: any): boolean => m.pm2_env.status === 'online')
+    if(!force && ledgerStatus.length === ledger.length && ledger.length !== 0) throw new Error('kungfu ledger 正在运行！')
     return startProcess({
         'name': processName,
-        'args': '-l trace watcher'
+        'args': 'ledger'
     }).catch(err => logger.error(err))
 }
+
 
 //启动md
 export const startMd = (source: string): Promise<void> => {
@@ -226,8 +264,15 @@ export const startStrategy = (strategyId: string, strategyPath: string): Promise
     strategyPath = dealSpaceInPath(strategyPath)
     return startProcess({
         "name": strategyId,
-        "args": `-l trace strategy -n ${strategyId} -p ${strategyPath}`,
+        "args": `strategy -n ${strategyId} -p ${strategyPath}`,
     }).catch(err => logger.error(err))
+}
+
+export const startBar = (targetName: string, source: string, timeInterval: string): Promise<any> => {
+    return startProcess({
+        "name": targetName,
+        "args": `bar -s ${source} --time-interval ${timeInterval}`
+    })
 }
 
 //列出所有进程
@@ -243,6 +288,23 @@ export const listProcessStatus = () => {
     })
 }
 
+export const listProcessStatusWithDetail = () => {
+    return pm2List().then((pList: any[]): StringToProcessStatusDetail => {
+        let processStatus: any = {}
+        Object.freeze(pList).forEach(p => {
+            const { monit, pid, name, pm2_env } = p;
+            const status = pm2_env.status
+            processStatus[name] = {
+                status,
+                monit,
+                pid,
+                name
+            }
+        })
+        return processStatus
+    })
+}
+
 //删除进程
 export const deleteProcess = (processName: string) => {
     return new Promise(async(resolve, reject) => {
@@ -250,7 +312,7 @@ export const deleteProcess = (processName: string) => {
         try{
             processes = await describeProcess(processName)
         }catch(err){
-            console.error(err)
+            logger.error(err)
         }
 
         //如果進程不存在，會跳過刪除步驟
@@ -258,11 +320,26 @@ export const deleteProcess = (processName: string) => {
             resolve(true)
             return;
         }
-        const pids = processes.map((prc: any): number => prc.pid);
+        const pids = processes
+        .map((prc: any): number => prc.pid)
+        .filter((pid: number): boolean => !!pid)
+
         pm2Delete(processName)
         .then(() => resolve(true))
         .catch(err => reject(err))
-        .finally(() => kfKill(pids).catch((err: Error): void => {}))
+        .finally(() => {
+            if(pids && pids.length) { 
+                logger.info('[KILL PROCESS] by pids', pids)
+                kfKill(pids)
+                .then(() => { 
+                    logger.info('[KILL PROCESS] by pids success', pids)
+                })
+                .catch((err: Error) => {
+                    logger.error(err)
+                    logger.error(err)
+                })
+            }
+        })
     })
 }
 

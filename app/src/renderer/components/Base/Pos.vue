@@ -10,9 +10,9 @@
         <tr-dashboard-header-item>
             <i class="el-icon-download mouse-over" title="导出" @click="handleExport"></i>
         </tr-dashboard-header-item>
-        <tr-dashboard-header-item>
+        <!-- <tr-dashboard-header-item>
             <el-button size="mini" @click="makeOrderDialogVisiblity = true">下单</el-button>
-        </tr-dashboard-header-item>
+        </tr-dashboard-header-item> -->
     </div>
     <tr-table
         v-if="rendererTable"
@@ -125,9 +125,9 @@ export default {
                     flex: 1
                 },{
                     type: 'number',
-                    label: '开仓均价',
-                    prop: 'openPrice',
-                    flex: 1.2
+                    label: '开/持仓均价',
+                    prop: 'avgPrice',
+                    flex: 1.5
                 },{
                     type: 'number',
                     label: '最新价',
@@ -157,19 +157,14 @@ export default {
         currentId(val) {
             const t = this;
             t.resetData();
-            if(!val) return;
-            t.rendererTable = false;
-            t.$nextTick().then(() => {
-                t.rendererTable = true;
-                t.init()
-            })
+            if(val) t.init();
         },
 
         filter:{
             deep: true,
             handler() {
                 const t = this;
-                t.currentId && t.init(true)
+                t.currentId && t.init()
             }
         },
 
@@ -178,6 +173,12 @@ export default {
             const t = this;
             if(!val || t.getDataLock) return
             t.dealNanomsg(val)
+        },
+
+         tradingDay() {
+            const t = this;
+            t.resetData();
+            if(t.currentId) t.init();
         }
 
     },
@@ -261,7 +262,10 @@ export default {
             //如果存在筛选，则推送的数据也需要满足筛选条件
             if(!data.instrument_id.includes(t.filter.instrumentId)) return
             const poskey = t.getKey(data)
-            t.posDataByKey[poskey] = { ...dealPos(data) }
+            t.posDataByKey[poskey] = { 
+                ...dealPos(data),
+                nano: true
+            }
             //更新数据, 根据ID来排序
             const sortPosList = Object.values(t.posDataByKey).sort((a, b) =>{
                 return a.instrumentId - b.instrumentId
@@ -290,8 +294,8 @@ export default {
                     else if(item.unRealizedPnl < 0) return 'green'
                     break
                 case 'lastPrice':
-                    if(item.lastPrice > item.openPrice) return 'red'
-                    else if(item.lastPrice < item.openPrice) return 'green'
+                    if(item.lastPrice > item.avgPrice) return 'red'
+                    else if(item.lastPrice < item.avgPrice) return 'green'
                     break;
             }
         }

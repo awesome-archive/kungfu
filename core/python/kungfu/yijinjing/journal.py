@@ -5,6 +5,7 @@ import re
 import json
 import pyyjj
 import pandas as pd
+import errno
 import kungfu.yijinjing.msg as yjj_msg
 
 
@@ -50,17 +51,33 @@ def find_category(c):
     return pyyjj.category.SYSTEM
 
 
+def get_location_from_json(ctx, data):
+    if 'mode' in data and 'category' in data and 'group' in data and 'name' in data:
+        return pyyjj.location(MODES[data['mode']], CATEGORIES[data['category']], data['group'], data['name'], ctx.locator)
+    else:
+        return None
+
+
 class Locator(pyyjj.locator):
     def __init__(self, home):
         pyyjj.locator.__init__(self)
         self._home = home
 
+    def has_env(self, name):
+        return os.getenv(name) is not None
+
+    def get_env(self, name):
+        return os.getenv(name)
+
     def layout_dir(self, location, layout):
         mode = pyyjj.get_mode_name(location.mode)
         category = pyyjj.get_category_name(location.category)
         p = os.path.join(self._home, category, location.group, location.name, pyyjj.get_layout_name(layout), mode)
-        if not os.path.exists(p):
+        try:
             os.makedirs(p)
+        except OSError as e:
+            if e.errno != errno.EEXIST:
+                raise
         return p
 
     def layout_file(self, location, layout, name):
@@ -132,18 +149,23 @@ def find_sessions(ctx):
 
     ctx.session_count = 1
     sessions_df = pd.DataFrame(columns=[
-        'id', 'mode', 'category', 'group', 'name', 'begin_time', 'end_time', 'closed', 'duration', 'frame_count'
+        'id', 'mode', 'category', 'group', 'name', 'begin_time', 'end_time', 'closed', 'duration'
     ])
     locations = collect_journal_locations(ctx)
     dest_pub = '{:08x}'.format(0)
     for key in locations:
         record = locations[key]
-        location = pyyjj.location(MODES[record['mode']], CATEGORIES[record['category']], record['group'], record['name'], ctx.locator)
-        if dest_pub in record['readers']:
+        if record["mode"] == "live" and record["group"] != "master":
+            master_command_location = pyyjj.location(pyyjj.mode.LIVE, pyyjj.category.SYSTEM, "master", '{:08x}'.format(key), ctx.locator)
             reader = io_device.open_reader_to_subscribe()
-            for dest_id in record['readers']:
-                reader.join(location, int(dest_id, 16), 0)
+            reader.join(master_command_location, key, 0)
             find_sessions_from_reader(ctx, sessions_df, reader, record['mode'], record['category'], record['group'], record['name'])
+        else:
+            location = pyyjj.location(MODES[record['mode']], CATEGORIES[record['category']], record['group'], record['name'], ctx.locator)
+            if dest_pub in record['readers']:
+                reader = io_device.open_reader_to_subscribe()
+                reader.join(location, int(dest_pub, 16), 0)
+                find_sessions_from_reader(ctx, sessions_df, reader, record['mode'], record['category'], record['group'], record['name'])
 
     return sessions_df
 
@@ -156,17 +178,15 @@ def find_session(ctx, session_id):
 def find_sessions_from_reader(ctx, sessions_df, reader, mode, category, group, name):
     session_start_time = -1
     last_frame_time = 0
-    frame_count = 0
 
     while reader.data_available():
         frame = reader.current_frame()
-        frame_count = frame_count + 1
         if frame.msg_type == yjj_msg.SessionStart:
             if session_start_time > 0:
                 sessions_df.loc[len(sessions_df)] = [
                     ctx.session_count, mode, category, group, name,
                     session_start_time, last_frame_time, False,
-                    last_frame_time - session_start_time, frame_count - 1
+                    last_frame_time - session_start_time
                 ]
                 session_start_time = frame.trigger_time
                 ctx.session_count = ctx.session_count + 1
@@ -178,7 +198,7 @@ def find_sessions_from_reader(ctx, sessions_df, reader, mode, category, group, n
                 sessions_df.loc[len(sessions_df)] = [
                     ctx.session_count, mode, category, group, name,
                     session_start_time, frame.gen_time, True,
-                    frame.gen_time - session_start_time, frame_count
+                    frame.gen_time - session_start_time
                 ]
                 session_start_time = -1
                 frame_count = 0
@@ -190,7 +210,7 @@ def find_sessions_from_reader(ctx, sessions_df, reader, mode, category, group, n
         sessions_df.loc[len(sessions_df)] = [
             ctx.session_count, mode, category, group, name,
             session_start_time, last_frame_time, False,
-            last_frame_time - session_start_time, frame_count
+            last_frame_time - session_start_time
         ]
         ctx.session_count = ctx.session_count + 1
 
@@ -241,7 +261,10 @@ def trace_journal(ctx, session_id, io_type):
         if frame.dest == home.uid and (frame.msg_type == yjj_msg.RequestReadFrom or frame.msg_type == yjj_msg.RequestReadFromPublic):
             request = pyyjj.get_RequestReadFrom(frame)
             source_location = make_location_from_dict(ctx, locations[request.source_id])
-            reader.join(source_location, location['uid'] if frame.msg_type == yjj_msg.RequestReadFrom else 0, request.from_time)
+            try:
+                reader.join(source_location, location['uid'] if frame.msg_type == yjj_msg.RequestReadFrom else 0, request.from_time)
+            except Exception as err:
+                ctx.logger.error("failed to join journal {}/{}, exception: {}".format(source_location.uname, location['uid'] if frame.msg_type == yjj_msg.RequestReadFrom else 0), err)
         if frame.dest == home.uid and frame.msg_type == yjj_msg.Deregister:
             loc = json.loads(frame.data_as_string())
             reader.disjoin(loc['uid'])

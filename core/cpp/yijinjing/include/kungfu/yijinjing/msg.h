@@ -31,11 +31,15 @@ namespace kungfu
                     RequestStart = 10025,
                     Location = 10026,
                     TradingDay = 10027,
+                    Channel = 10028
                 };
             }
 
             namespace data
             {
+#ifdef _WIN32
+#pragma  pack(push, 1)
+#endif
                 struct TimeRequest
                 {
                     int32_t id;
@@ -46,7 +50,6 @@ namespace kungfu
 
 #else
                 };
-#pragma pack(pop)
 #endif
 
                 struct RequestReadFrom
@@ -59,7 +62,6 @@ namespace kungfu
 
 #else
                 };
-#pragma pack(pop)
 #endif
 
                 struct RequestWriteTo
@@ -71,9 +73,24 @@ namespace kungfu
 
 #else
                 };
+#endif
+
+
+            struct Channel
+            {
+                uint32_t source_id;
+                uint32_t dest_id;
+#ifndef _WIN32
+            } __attribute__((packed));
+#else
+            };
+#endif
+
+#ifdef _WIN32
 #pragma pack(pop)
 #endif
             }
+
         }
     }
 }

@@ -3,13 +3,13 @@
         placement="top-start"
         width="auto"
         trigger="click"
-        popper-class="core-status-popover"
+        popper-class="kf-footer-popover"
         >
         <div class="core-status-content">
             <div class="core-item" >
                 <div class="core-status">
                     <span class="core-process-item core-process-title text-overflow" title="主进程">
-                        主控进程  <el-tag type="warning">master</el-tag>
+                        主控进程  <el-tag type="warning">Master</el-tag>
                     </span>
                     <span class="core-process-item text-overflow" style="width: 71px;">
                         <tr-status 
@@ -25,16 +25,16 @@
             <div class="core-item" >
                 <div class="core-status">
                     <span class="core-process-item  core-process-title text-overflow" title="数据进程">
-                        数据进程 <el-tag>watcher</el-tag>
+                        数据进程 <el-tag>Ledger</el-tag>
                     </span>
                     <span  class="core-process-item text-overflow" style="width: 71px;">
                         <tr-status 
-                        v-if="$utils.ifProcessRunning('watcher', processStatus)"
-                        :value="buildState('watcher')"></tr-status>
+                        v-if="$utils.ifProcessRunning('ledger', processStatus)"
+                        :value="buildState('ledger')"></tr-status>
                         <tr-status v-else></tr-status>
                     </span>
                      <span class="core-process-item get-log">
-                        <i class="el-icon-document mouse-over" title="打开日志文件" @click="handleOpenLog('watcher.log')" ></i>
+                        <i class="el-icon-document mouse-over" title="打开日志文件" @click="handleOpenLog('ledger.log')" ></i>
                     </span>
                 </div>
             </div>
@@ -48,7 +48,6 @@
 <script>
 import { mapGetters, mapState } from 'vuex';
 import { statusConfig } from '__gConfig/statusConfig';
-import { switchTd, switchMd } from '__io/actions/account';
 import { ifProcessRunning } from '__gUtils/busiUtils';
 import { LOG_DIR } from '__gConfig/pathConfig';
 
@@ -61,7 +60,7 @@ export default {
             statusLevel[key] = statusConfig[key].level;
         })
         this.nasterErrController = false;
-        this.watcherErrController = false;
+        this.ledgerErrController = false;
         return {
             statusLevel
         }
@@ -86,17 +85,17 @@ export default {
             }
 
             if(!ifProcessRunning('master', t.processStatus)){
-                if(!t.nasterErrController){
+                if(!t.nasterErrController && !!t.processStatus['master']){
                     t.$message.error('主控进程断开，不可交易，请重启应用！', 0)
                     t.nasterErrController = true;  
                 }
                 return 'color-red'
             }
 
-            if(!ifProcessRunning('watcher', t.processStatus)){
-                if(!t.watcherErrController){
+            if(!ifProcessRunning('ledger', t.processStatus)){
+                if(!t.ledgerErrController && !!t.processStatus['ledger']){
                     t.$message.error('数据进程断开，交易数据将会丢失，请重启应用！', 0)
-                    t.watcherErrController = true;  
+                    t.ledgerErrController = true;  
                 }
                 return 'color-red'
             }
@@ -150,7 +149,7 @@ export default {
                 width: 20px;
             }
             .core-process-item.core-process-title{
-                width: 150px;
+                width: 155px;
             }
             .source-name{
                 width: 45px;

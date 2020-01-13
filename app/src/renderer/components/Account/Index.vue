@@ -37,7 +37,7 @@
             </el-col>
 
             <el-col :span="10">
-                <el-row style="height: 66.666%">
+                <el-row style="height: 50%">
                     <Pos 
                     ref="pos"
                     :currentId="currentId" 
@@ -48,7 +48,7 @@
                     />
                 </el-row>
                 
-                <el-row style="height: 33.333%">
+                <el-row style="height: 50%">
                     <TradeRecord
                     ref="trade-record"
                     :currentId="currentId"
@@ -71,7 +71,6 @@ import CurrentOrder from '../Base/CurrentOrder';
 import TradeRecord from '../Base/TradeRecord';
 import Pos from '../Base/Pos';
 import Pnl from '../Base/pnl/Index';
-import { accountSource } from '__gConfig/accountConfig';
 import * as ACCOUNT_API from '__io/db/account';
 import { debounce } from '__gUtils/busiUtils';
 import { buildTradingDataPipe, buildCashPipe } from '__io/nano/nanoSub';
@@ -99,13 +98,15 @@ export default {
     computed:{
         ...mapState({
             currentAccount: state => state.ACCOUNT.currentAccount, //选中的账户
+            accountSource: state => (state.BASE.accountSource || {})
         }),
 
         //账户的类型，根据是哪个柜台的，可以判断是是期货还是股票还是证券
         accountType() {
-            const source_name = this.currentAccount.source_name
+            const t = this;
+            const source_name = t.currentAccount.source_name
             if(!source_name) return
-            return accountSource[source_name].typeName
+            return (t.accountSource[source_name] || {}).typeName || ''
         },
 
         currentId() {
@@ -139,6 +140,7 @@ export default {
                 case MSG_TYPE.portfolio:
                     if(accountId !== currentId) return;
                     if(ledgerCategory !== 0) return;
+                    // console.log('[PNL] sub', tradingData)
                     t.minPnlFromNmsg = Object.freeze(tradingData);     
             }
         })
@@ -161,10 +163,6 @@ export default {
 
 <style lang="scss" scoped>
 @import '@/assets/scss/skin.scss';
-.account-content{
-    height: 100%;
-}
-
 .account-content{
     height: 100%;
 }

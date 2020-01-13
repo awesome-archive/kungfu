@@ -1,4 +1,4 @@
-import {blankValidator, validateTCPUri, validate099, validateInt} from '__assets/validator'
+import {blankValidator, tcpUriValidator, o99Validator, intValidator} from '__assets/validator'
 /**
  * @param  {String} type stock/future
  */
@@ -15,8 +15,8 @@ export const feeTemplate = (type) => {
             options: {
                 1: '股票',
                 2: '期货',
-                3: '债券',
-                4: '股票期权'
+                // 3: '债券',
+                // 4: '股票期权'
             }
         },
         mode: {
